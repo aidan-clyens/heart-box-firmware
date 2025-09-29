@@ -1,19 +1,9 @@
-#ifndef __GPIO_TASK_H__
-#define __GPIO_TASK_H__
+#include "gpio_task.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
-
-#include "driver/gpio.h"
-
 #include "esp_log.h"
-
-#define HEART_LED_ARRAY_PIN GPIO_NUM_14
-#define LED_STATUS_PIN GPIO_NUM_2
-#define BUTTON_PIN GPIO_NUM_25
-
-#define BUTTON_DEBOUNCE_TIME_MS 50
 
 SemaphoreHandle_t button_semaphore = NULL;
 
@@ -58,7 +48,7 @@ void gpio_initialize()
 
 /** @brief GPIO Button Task
  */
-void gpio_button_task(void *args)
+static void gpio_button_task(void *args)
 {
   ESP_LOGI("gpio_button_task", "GPIO Task Started");
 
@@ -106,5 +96,3 @@ void gpio_create_task()
   xTaskCreate(gpio_button_task, "gpio_button_task", 2048, NULL, 10, NULL);
   xTaskCreate(gpio_led_blink_task, "gpio_led_blink_task", 2048, NULL, 10, NULL);
 }
-
-#endif // __GPIO_TASK_H__

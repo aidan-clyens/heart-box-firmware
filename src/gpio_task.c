@@ -82,11 +82,9 @@ static void gpio_led_blink_task(void *arg)
 {
   while (true)
   {
-    ESP_LOGI(TAG_LED_BLINK_TASK, "Turning LED ON");
     gpio_set_level(LED_STATUS_PIN, 1);
     vTaskDelay(1000 / portTICK_PERIOD_MS);
 
-    ESP_LOGI(TAG_LED_BLINK_TASK, "Turning LED OFF");
     gpio_set_level(LED_STATUS_PIN, 0);
     vTaskDelay(1000 / portTICK_PERIOD_MS);
   }

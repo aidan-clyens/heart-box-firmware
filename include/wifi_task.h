@@ -5,7 +5,7 @@
 extern "C" {
 #endif
 
-void wifi_initialize();
+void wifi_task_init();
 
 #ifdef __cplusplus
 }

@@ -5,6 +5,9 @@
 #include "freertos/semphr.h"
 #include "esp_log.h"
 
+const char * TAG_BUTTON_TASK = "gpio_button_task";
+const char * TAG_LED_BLINK_TASK = "gpio_led_blink_task";
+
 SemaphoreHandle_t button_semaphore = NULL;
 
 /** @brief Push Button Interrupt Service Routine
@@ -50,7 +53,7 @@ void gpio_initialize()
  */
 static void gpio_button_task(void *args)
 {
-  ESP_LOGI("gpio_button_task", "GPIO Task Started");
+  ESP_LOGI(TAG_BUTTON_TASK, "GPIO Task Started");
 
   int button_level = 0;
 
@@ -65,7 +68,7 @@ static void gpio_button_task(void *args)
 
       // Check if the button is pressed or released
       button_level = gpio_get_level(BUTTON_PIN);
-      ESP_LOGI("gpio_button_task", "Button level: %d", button_level);
+      ESP_LOGI(TAG_BUTTON_TASK, "Button level: %d", button_level);
       gpio_set_level(HEART_LED_ARRAY_PIN, button_level);
 
       gpio_intr_enable(BUTTON_PIN);
@@ -79,11 +82,11 @@ static void gpio_led_blink_task(void *arg)
 {
   while (true)
   {
-    ESP_LOGI("gpio_led_blink_task", "Turning LED ON");
+    ESP_LOGI(TAG_LED_BLINK_TASK, "Turning LED ON");
     gpio_set_level(LED_STATUS_PIN, 1);
     vTaskDelay(1000 / portTICK_PERIOD_MS);
 
-    ESP_LOGI("gpio_led_blink_task", "Turning LED OFF");
+    ESP_LOGI(TAG_LED_BLINK_TASK, "Turning LED OFF");
     gpio_set_level(LED_STATUS_PIN, 0);
     vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
@@ -91,8 +94,10 @@ static void gpio_led_blink_task(void *arg)
 
 /** @brief Create GPIO Tasks
  */
-void gpio_create_task()
+void gpio_task_init()
 {
-  xTaskCreate(gpio_button_task, "gpio_button_task", 2048, NULL, 10, NULL);
-  xTaskCreate(gpio_led_blink_task, "gpio_led_blink_task", 2048, NULL, 10, NULL);
+  gpio_initialize();
+
+  xTaskCreate(gpio_button_task, TAG_BUTTON_TASK, 2048, NULL, 10, NULL);
+  xTaskCreate(gpio_led_blink_task, TAG_LED_BLINK_TASK, 2048, NULL, 10, NULL);
 }

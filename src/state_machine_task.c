@@ -6,21 +6,24 @@
 
 #include "esp_log.h"
 
+const char * TAG = "state_machine_task";
+
 static QueueHandle_t event_queue;
 AppState_t current_state = STATE_STARTING;
 
 /** @brief State Machine Starting State
+ *  @param event The event that triggered the state transition
  */
 void state_machine_starting(AppEvent_t event)
 {
   switch (event)
   {
   case EVENT_NO_WIFI_CREDENTIALS:
-    ESP_LOGI("state_machine", "Transition from STARTING to REGISTRATION state");
+    ESP_LOGI(TAG, "Transition from STARTING to REGISTRATION state");
     current_state = STATE_REGISRATION;
     break;
   case EVENT_WIFI_CREDENTIALS:
-    ESP_LOGI("state_machine", "Transition from STARTING to INIT state");
+    ESP_LOGI(TAG, "Transition from STARTING to INIT state");
     current_state = STATE_INIT;
   default:
     break;
@@ -28,13 +31,14 @@ void state_machine_starting(AppEvent_t event)
 }
 
 /** @brief State Machine Registration State
+ *  @param event The event that triggered the state transition
  */
 void state_machine_registration(AppEvent_t event)
 {
   switch (event)
   {
   case EVENT_WIFI_CONNECTED:
-    ESP_LOGI("state_machine", "Transition from REGISTRATION to INIT state");
+    ESP_LOGI(TAG, "Transition from REGISTRATION to INIT state");
     current_state = STATE_INIT;
     break;
   default:
@@ -48,14 +52,14 @@ static void state_machine_task(void *args)
 {
   AppEvent_t event;
 
-  ESP_LOGI("state_machine", "State Machine Task Started");
+  ESP_LOGI(TAG, "State Machine Task Started");
 
   while (true)
   {
     if (xQueueReceive(event_queue, &event, portMAX_DELAY))
     {
       // Handle events and state transitions here
-      ESP_LOGI("state_machine", "Event received: %d", event);
+      ESP_LOGI(TAG, "Event received: %d", event);
       switch (current_state)
       {
       case STATE_STARTING:
@@ -78,14 +82,14 @@ static void state_machine_task(void *args)
 
 /** @brief Create State Machine Task
  */
-void state_machine_create_task()
+void state_machine_task_init()
 {
   event_queue = xQueueCreate(10, sizeof(AppEvent_t));
   if (event_queue == NULL)
   {
-    ESP_LOGE("state_machine", "Failed to create event queue");
+    ESP_LOGE(TAG, "Failed to create event queue");
     return;
   }
 
-  xTaskCreate(state_machine_task, "state_machine_task", 2048, NULL, 10, NULL);
+  xTaskCreate(state_machine_task, TAG, 2048, NULL, 10, NULL);
 }

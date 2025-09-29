@@ -14,8 +14,7 @@ extern "C"
 
 #define BUTTON_DEBOUNCE_TIME_MS 50
 
-void gpio_initialize();
-void gpio_create_task();
+void gpio_task_init();
 
 #ifdef __cplusplus
 }

@@ -22,7 +22,7 @@ typedef enum
   EVENT_WIFI_DISCONNECTED,
 } AppEvent_t;
 
-void state_machine_create_task();
+void state_machine_task_init();
 
 #ifdef __cplusplus
 }

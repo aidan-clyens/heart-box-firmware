@@ -31,10 +31,8 @@ void app_main()
 {
   nvs_initialize();
 
-  gpio_initialize();
-  wifi_initialize();
-
   // Create tasks
-  state_machine_create_task();
-  gpio_create_task();
+  state_machine_task_init();
+  gpio_task_init();
+  wifi_task_init();
 }

@@ -8,21 +8,11 @@ extern "C"
 
 typedef enum
 {
-  STATE_STARTING,
-  STATE_REGISRATION,
-  STATE_INIT,
-  STATE_RUNNING,
-} AppState_t;
-
-typedef enum
-{
-  EVENT_NO_WIFI_CREDENTIALS,
-  EVENT_WIFI_CREDENTIALS,
-  EVENT_WIFI_CONNECTED,
-  EVENT_WIFI_DISCONNECTED,
-} AppEvent_t;
+  APP_EVENT_WIFI_CONNECTED,
+} eAppEvent_t;
 
 void state_machine_task_init();
+void state_machine_post_event(eAppEvent_t event);
 
 #ifdef __cplusplus
 }

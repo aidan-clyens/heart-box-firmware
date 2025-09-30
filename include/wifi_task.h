@@ -5,10 +5,21 @@
 extern "C" {
 #endif
 
-void wifi_task_init();
+typedef enum
+{
+  WIFI_CMD_MODE_AP_STA,
+  WIFI_CMD_SET_STA_CREDENTIALS,
+  WIFI_CMD_PING,
+} eWifiCommand_t;
 
-void wifi_set_sta_mode();
-void wifi_set_ap_mode();
+typedef enum
+{
+  WIFI_EVENT_CONNECTED,
+  WIFI_EVENT_DISCONNECTED,
+} eWifiEvent_t;
+
+void wifi_task_init();
+void wifi_post_cmd(eWifiCommand_t cmd);
 
 #ifdef __cplusplus
 }

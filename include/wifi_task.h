@@ -5,18 +5,16 @@
 extern "C" {
 #endif
 
+/** @enum eWifiCommand_t
+ *  @brief Commands for the WiFi task
+ */
 typedef enum
 {
+  WIFI_CMD_MODE_AP,
   WIFI_CMD_MODE_AP_STA,
   WIFI_CMD_SET_STA_CREDENTIALS,
   WIFI_CMD_PING,
 } eWifiCommand_t;
-
-typedef enum
-{
-  WIFI_EVENT_CONNECTED,
-  WIFI_EVENT_DISCONNECTED,
-} eWifiEvent_t;
 
 void wifi_task_init();
 void wifi_post_cmd(eWifiCommand_t cmd);

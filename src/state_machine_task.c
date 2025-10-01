@@ -13,16 +13,15 @@
  */
 typedef enum
 {
-  STATE_STARTING,
-  STATE_REGISRATION,
-  STATE_WIFI_INIT,
-  STATE_RUNNING,
+  STATE_IDLE,
+  STATE_PROVISIONING,
+  STATE_CONNECTED,
 } AppState_t;
 
 const char * TAG = "state_machine_task";
 
 static QueueHandle_t state_machine_event_queue;
-AppState_t current_state = STATE_STARTING;
+AppState_t current_state = STATE_IDLE;
 
 /** @brief Post an event to the State Machine task
  *  @param event The event to post
@@ -35,56 +34,13 @@ void state_machine_post_event(eAppEvent_t event)
   }
 }
 
-/** @brief State Machine Starting State
+/** @brief Change the current state
+ *  @param new_state The new state to change to
  */
-void state_machine_starting()
+void state_machine_change_state(AppState_t new_state)
 {
-  ESP_LOGI(TAG, "Changed to STARTING state");
-
-  // TODO - Read NVS to check if WiFi credentials are available
-  bool wifi_credentials_available = true;
-
-  current_state = (wifi_credentials_available) ? STATE_WIFI_INIT : STATE_REGISRATION;
-}
-
-/** @brief State Machine Registration State
- */
-void state_machine_registration()
-{
-  ESP_LOGI(TAG, "Changed to REGISTRATION state");
-  // Send event to WiFi task to start in AP+STA mode
-  wifi_post_cmd(WIFI_CMD_MODE_AP_STA);
-
-  // TODO - Wait for WiFi event
-  while (true)
-  {
-    vTaskDelay(pdMS_TO_TICKS(5000));
-  }
-}
-
-/** @brief State Machine Initialization State
- */
-void state_machine_init()
-{
-  ESP_LOGI(TAG, "Changed to INIT state");
-  // Send event to WiFi task to start connection in STA mode
-  wifi_post_cmd(WIFI_CMD_SET_STA_CREDENTIALS);
-
-  // Wait for WiFi connection event
-  while (true)
-  {
-    eAppEvent_t event;
-    if (xQueueReceive(state_machine_event_queue, &event, portMAX_DELAY))
-    {
-      if (event == APP_EVENT_WIFI_CONNECTED)
-      {
-        ESP_LOGI(TAG, "Received WIFI_CONNECTED event");
-        ESP_LOGI(TAG, "Changed to RUNNING state");
-        current_state = STATE_RUNNING;
-        break;
-      }
-    }
-  }
+  ESP_LOGI(TAG, "State changed from %d to %d", current_state, new_state);
+  current_state = new_state;
 }
 
 /** @brief State Machine Task
@@ -92,27 +48,34 @@ void state_machine_init()
 static void state_machine_task(void *args)
 {
   ESP_LOGI(TAG, "State Machine Task Started");
+  eAppEvent_t event;
 
   while (true)
   {
     switch (current_state)
     {
-    case STATE_STARTING:
-      state_machine_starting();
+    case STATE_IDLE:
+      // TODO - Read Wifi credentials from NVS
+      // TODO - If credentials exist, post command to WiFi task to connect in STA mode
+
+      // If no credentials, post command to WiFi task to start AP mode
+      wifi_post_cmd(WIFI_CMD_MODE_AP);
+      if (xQueueReceive(state_machine_event_queue, &event, portMAX_DELAY))
+      {
+        if (event == APP_EVENT_AP_STARTED)
+        {
+          state_machine_change_state(STATE_PROVISIONING);
+        }
+      }
       break;
-    case STATE_REGISRATION:
-      state_machine_registration();
-      break;
-    case STATE_WIFI_INIT:
-      state_machine_init();
-      break;
-    case STATE_RUNNING:
+    case STATE_PROVISIONING:
       while (true)
       {
-        // In RUNNING state, periodically ping to check connectivity
-        wifi_post_cmd(WIFI_CMD_PING);
-        vTaskDelay(pdMS_TO_TICKS(30000));
+        vTaskDelay(pdMS_TO_TICKS(5000));
       }
+      break;
+    case STATE_CONNECTED:
+      break;
     default:
       break;
     }

@@ -53,15 +53,6 @@ void wifi_post_cmd(eWifiCommand_t cmd)
   }
 }
 
-/** @brief Change the current WiFi state
- *  @param new_state The new state to change to
- */
-void wifi_change_state(WifiState_t new_state)
-{
-  ESP_LOGI(TAG, "WiFi State changed from %d to %d", wifi_current_state, new_state);
-  wifi_current_state = new_state;
-}
-
 /** @brief Event handler for WiFi and IP events
  *  @param arg         User defined argument
  *  @param event_base  Event base
@@ -73,36 +64,33 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
 {
   if (event_base == WIFI_EVENT)
   {
-    if (event_id == WIFI_EVENT_STA_START)
+    switch (event_id)
     {
-      esp_wifi_connect();
-    }
-    else if (event_id == WIFI_EVENT_STA_DISCONNECTED)
-    {
-      if (wifi_connect_retries >= WIFI_CONNECT_MAX_RETRIES)
-      {
-        ESP_LOGW(TAG, "Failed to connect to SSID:%s after %d attempts. Stopping...", WIFI_SSID, wifi_connect_retries);
-        esp_wifi_stop();
-  
-        wifi_change_state(STATE_IDLE);
-      }
-  
-      esp_wifi_connect(); // retry
-      wifi_connect_retries++;
-    }
-    else if (event_id == WIFI_EVENT_AP_START)
-    {
-      ESP_LOGI(TAG, "Access Point Started");
-      // TODO - Start HTTP server
+      case WIFI_EVENT_STA_START:
+        esp_wifi_connect();
+        break;
+      case WIFI_EVENT_STA_DISCONNECTED:
+        if (wifi_connect_retries >= WIFI_CONNECT_MAX_RETRIES)
+        {
+          ESP_LOGW(TAG, "Failed to connect to SSID:%s after %d attempts. Stopping...", WIFI_SSID, wifi_connect_retries);
+          esp_wifi_stop();
 
-      wifi_change_state(STATE_PROVISIONING);
-    }
-    else if (event_id == WIFI_EVENT_AP_STOP)
-    {
-      ESP_LOGI(TAG, "Access Point Stopped");
-      // TODO - Stop HTTP server
+          state_machine_post_event(APP_EVENT_WIFI_DISCONNECTED);
+        }
 
-      wifi_change_state(STATE_IDLE);
+        esp_wifi_connect(); // retry
+        wifi_connect_retries++;
+
+        break;
+      case WIFI_EVENT_AP_START:
+        ESP_LOGI(TAG, "Access Point Started");
+        state_machine_post_event(APP_EVENT_AP_STARTED);
+        break;
+      case WIFI_EVENT_AP_STOP:
+        ESP_LOGI(TAG, "Access Point Stopped");
+        break;
+      default:
+        break;
     }
   }
   else if (event_base == IP_EVENT)
@@ -115,7 +103,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
       state_machine_post_event(APP_EVENT_WIFI_CONNECTED);
       wifi_connect_retries = 0; // reset retry counter
   
-      wifi_change_state(STATE_CONNECTED);
+      state_machine_post_event(APP_EVENT_WIFI_CONNECTED);
     }
   }
 }
@@ -182,6 +170,7 @@ void wifi_set_config_sta(const char* ssid, const char* password)
   strlcpy((char *)wifi_config.sta.password, password, sizeof(wifi_config.sta.password));
   wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
 
+  ESP_LOGI(TAG, "Setting WiFi SSID:%s password:%s", wifi_config.sta.ssid, wifi_config.sta.password);
   ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
 }
 
@@ -203,6 +192,7 @@ void wifi_set_config_ap(const char *ssid, const char *password)
     ap_config.ap.authmode = WIFI_AUTH_OPEN; // open AP if no password
   }
 
+  ESP_LOGI(TAG, "Setting AP SSID:%s password:%s", ap_config.ap.ssid, ap_config.ap.password);
   ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_config));
 }
 
@@ -287,40 +277,36 @@ static void wifi_task(void *args)
 
   while (true)
   {
-    switch (wifi_current_state)
+    if (xQueueReceive(wifi_cmd_queue, &cmd, portMAX_DELAY))
     {
-    case STATE_IDLE:
-      if (xQueueReceive(wifi_cmd_queue, &cmd, portMAX_DELAY))
+      switch (cmd)
       {
-        if (cmd == WIFI_CMD_MODE_AP_STA)
-        {
-          ESP_LOGI(TAG, "Starting WiFi in AP+STA mode");
+        case WIFI_CMD_MODE_AP:
+          ESP_LOGI(TAG, "Starting WiFi in AP mode");
+          ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
           wifi_set_config_ap(WIFI_AP_SSID, WIFI_AP_PASSWORD);
+          ESP_ERROR_CHECK(esp_wifi_start());
+          break;
+        case WIFI_CMD_MODE_AP_STA:
+          ESP_LOGI(TAG, "Starting WiFi in AP+STA mode");
           ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
-          ESP_ERROR_CHECK(esp_wifi_start());
-        }
-        else if (cmd == WIFI_CMD_SET_STA_CREDENTIALS)
-        {
-          ESP_LOGI(TAG, "Starting WiFi in STA mode");
+          wifi_set_config_ap(WIFI_AP_SSID, WIFI_AP_PASSWORD);
           wifi_set_config_sta(WIFI_SSID, WIFI_PASSWORD);
-          ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
           ESP_ERROR_CHECK(esp_wifi_start());
-        }
-      }
-      break;
-    case STATE_PROVISIONING:
-      break;
-    case STATE_CONNECTED:
-      if (xQueueReceive(wifi_cmd_queue, &cmd, portMAX_DELAY))
-      {
-        if (cmd == WIFI_CMD_PING)
-        {
+          break;
+        case WIFI_CMD_SET_STA_CREDENTIALS:
+          ESP_LOGI(TAG, "Starting WiFi in STA mode");
+          ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+          wifi_set_config_sta(WIFI_SSID, WIFI_PASSWORD);
+          ESP_ERROR_CHECK(esp_wifi_start());
+          break;
+        case WIFI_CMD_PING:
           wifi_ping("www.google.com");
-        }
+          break;
+        default:
+          ESP_LOGW(TAG, "Unknown command: %d", cmd);
+          break;
       }
-      break;
-    default:
-      break;
     }
   }
 }

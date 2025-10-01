@@ -6,9 +6,14 @@ extern "C"
 {
 #endif
 
+/** @enum eAppEvent_t
+ *  @brief Events for the State Machine task
+ */
 typedef enum
 {
   APP_EVENT_WIFI_CONNECTED,
+  APP_EVENT_WIFI_DISCONNECTED,
+  APP_EVENT_AP_STARTED,
 } eAppEvent_t;
 
 void state_machine_task_init();

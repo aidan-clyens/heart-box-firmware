@@ -5,6 +5,7 @@
 #include "freertos/queue.h"
 
 #include "wifi_task.h"
+#include "http_server.h"
 
 #include "esp_log.h"
 
@@ -49,6 +50,7 @@ static void state_machine_task(void *args)
 {
   ESP_LOGI(TAG, "State Machine Task Started");
   eAppEvent_t event;
+  httpd_handle_t http_server = NULL;
 
   while (true)
   {
@@ -69,6 +71,17 @@ static void state_machine_task(void *args)
       }
       break;
     case STATE_PROVISIONING:
+      // Start HTTP server for provisioning
+      http_server = http_start_webserver();
+      if (http_server == NULL)
+      {
+        ESP_LOGE(TAG, "Failed to start HTTP server");
+      }
+      else
+      {
+        ESP_LOGI(TAG, "HTTP server started");
+      }
+
       while (true)
       {
         vTaskDelay(pdMS_TO_TICKS(5000));

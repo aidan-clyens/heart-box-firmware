@@ -61,7 +61,7 @@ static void state_machine_task(void *args)
       // TODO - If credentials exist, post command to WiFi task to connect in STA mode
 
       // If no credentials, post command to WiFi task to start AP mode
-      wifi_post_cmd(WIFI_CMD_MODE_AP);
+      wifi_set_ap_mode();
       if (xQueueReceive(state_machine_event_queue, &event, portMAX_DELAY))
       {
         if (event == APP_EVENT_AP_STARTED)

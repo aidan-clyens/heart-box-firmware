@@ -1,6 +1,13 @@
 #include "http_server.h"
 
 #include "esp_log.h"
+#include <string.h>
+
+#include "wifi_task.h"
+
+#ifndef MIN
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#endif
 
 static const char *TAG = "http_server";
 
@@ -11,7 +18,22 @@ static const char *TAG = "http_server";
  */
 static esp_err_t http_root_get_handler(httpd_req_t *req)
 {
-  const char resp[] = "Hello, world!";
+  const char resp[] = " \
+    <html> \
+      <head><title>Heart Box Login</title></head> \
+      <body> \
+        <h1>Enter your Wifi SSID and Password</h1> \
+        <div> \
+          <form action=\"/wifi\" method=\"post\"> \
+            <label for=\"ssid\">SSID:</label><br> \
+            <input type=\"text\" id=\"ssid\" name=\"ssid\"><br> \
+            <label for=\"password\">Password:</label><br> \
+            <input type=\"password\" id=\"password\" name=\"password\"><br><br> \
+            <input type=\"submit\" value=\"Submit\"> \
+          </form> \
+      </body> \
+    </html>";
+
   httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
   return ESP_OK;
 }
@@ -20,6 +42,65 @@ static const httpd_uri_t root_uri = {
     .uri = "/",
     .method = HTTP_GET,
     .handler = http_root_get_handler,
+    .user_ctx = NULL};
+
+/** @brief Handler for the /wifi POST URI
+ *
+ *  @param req The HTTP request
+ *  @return esp_err_t ESP_OK on success
+ */
+static esp_err_t http_wifi_post_handler(httpd_req_t *req)
+{
+  char buf[128];
+  int ret, remaining = req->content_len;
+
+  // Read the request body
+  int received = httpd_req_recv(req, buf, MIN(remaining, sizeof(buf) - 1));
+  if (received <= 0)
+  {
+    if (received == HTTPD_SOCK_ERR_TIMEOUT)
+    {
+      httpd_resp_send_408(req);
+    }
+    return ESP_FAIL;
+  }
+  buf[received] = '\0'; // null terminate
+
+  ESP_LOGI(TAG, "Received POST data: %s", buf);
+
+  // Example form body: "ssid=MyNetwork&password=Secret123"
+  char ssid[32] = {0};
+  char password[64] = {0};
+
+  // Very simple parsing (for demo)
+  char *ssid_ptr = strstr(buf, "ssid=");
+  char *pass_ptr = strstr(buf, "password=");
+  if (ssid_ptr)
+  {
+    sscanf(ssid_ptr, "ssid=%31[^&]", ssid);
+  }
+  if (pass_ptr)
+  {
+    sscanf(pass_ptr, "password=%63s", password);
+  }
+
+  ESP_LOGI(TAG, "Parsed SSID: %s", ssid);
+  ESP_LOGI(TAG, "Parsed Password: %s", password);
+
+  // TODO - Pass SSID and Password
+  wifi_set_sta_credentials(ssid, password);
+
+  // Send response back to client
+  const char resp[] = "<html><body><h2>Credentials received. Connecting...</h2></body></html>";
+  httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
+
+  return ESP_OK;
+}
+
+static const httpd_uri_t wifi_uri = {
+    .uri = "/wifi",
+    .method = HTTP_POST,
+    .handler = http_wifi_post_handler,
     .user_ctx = NULL};
 
 /** @brief Start the HTTP web server
@@ -33,6 +114,7 @@ httpd_handle_t http_start_webserver()
   if (httpd_start(&server, &config) == ESP_OK)
   {
     httpd_register_uri_handler(server, &root_uri);
+    httpd_register_uri_handler(server, &wifi_uri);
   }
   else
   {

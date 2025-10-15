@@ -9,7 +9,7 @@
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #endif
 
-static const char *TAG = "http_server";
+static const char * TAG_HTTP = "HTTP";
 
 /** @brief Handler for the root URI
  * 
@@ -66,7 +66,7 @@ static esp_err_t http_wifi_post_handler(httpd_req_t *req)
   }
   buf[received] = '\0'; // null terminate
 
-  ESP_LOGI(TAG, "Received POST data: %s", buf);
+  ESP_LOGI(TAG_HTTP, "Received POST data: %s", buf);
 
   // Example form body: "ssid=MyNetwork&password=Secret123"
   char ssid[32] = {0};
@@ -84,8 +84,8 @@ static esp_err_t http_wifi_post_handler(httpd_req_t *req)
     sscanf(pass_ptr, "password=%63s", password);
   }
 
-  ESP_LOGI(TAG, "Parsed SSID: %s", ssid);
-  ESP_LOGI(TAG, "Parsed Password: %s", password);
+  ESP_LOGI(TAG_HTTP, "Parsed SSID: %s", ssid);
+  ESP_LOGI(TAG_HTTP, "Parsed Password: %s", password);
 
   // TODO - Pass SSID and Password
   wifi_set_sta_credentials(ssid, password);
@@ -115,10 +115,12 @@ httpd_handle_t http_start_webserver()
   {
     httpd_register_uri_handler(server, &root_uri);
     httpd_register_uri_handler(server, &wifi_uri);
+
+    ESP_LOGI(TAG_HTTP, "Started HTTP server");
   }
   else
   {
-    ESP_LOGE(TAG, "Error starting server!");
+    ESP_LOGE(TAG_HTTP, "Failed to start HTTP server");
   }
   return server;
 }
@@ -130,6 +132,13 @@ void http_stop_webserver(httpd_handle_t server)
 {
   if (server)
   {
-    httpd_stop(server);
+    if (httpd_stop(server) != ESP_OK)
+    {
+      ESP_LOGE(TAG_HTTP, "Failed to stop HTTP server");
+    }
+    else
+    {
+      ESP_LOGI(TAG_HTTP, "Stopped HTTP server");
+    }
   }
 }

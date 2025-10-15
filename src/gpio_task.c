@@ -179,6 +179,6 @@ void gpio_task_init()
 {
   gpio_initialize();
 
-  xTaskCreate(gpio_button_task, TAG_BUTTON_TASK, 2048, NULL, 10, NULL);
+  xTaskCreate(gpio_button_task, TAG_BUTTON_TASK, 2048, NULL, 15, NULL);
   xTaskCreate(gpio_status_task, TAG_STATUS_TASK, 2048, NULL, 10, NULL);
 }

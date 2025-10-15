@@ -17,22 +17,18 @@
 #include "state_machine_task.h"
 
 #define WIFI_CONNECT_MAX_RETRIES 5
+#define WIFI_PING_HOSTNAME_LEN   64
 
-/** @enum WifiState_t
- *  @brief WiFi Application States
+/** @struct WifiPingRequest_t
+ *  @brief Structure containing the hostname for a ping request
  */
-typedef enum
+typedef struct
 {
-  STATE_IDLE,
-  STATE_PROVISIONING,
-  STATE_CONNECTED,
-} WifiState_t;
+  char host[WIFI_PING_HOSTNAME_LEN];
+} WifiPingRequest_t;
 
-static const char * TAG = "wifi_task";
-
-WifiState_t wifi_current_state = STATE_IDLE;
-bool is_wifi_started = false;
-bool is_wifi_connected = false;
+static const char * TAG_WIFI = "WIFI";
+static const char * TAG_PING = "WIFI_PING";
 
 const char * WIFI_AP_SSID = "HeartBox";
 const char * WIFI_AP_PASSWORD = "password";
@@ -40,29 +36,36 @@ const char * WIFI_AP_PASSWORD = "password";
 const char * WIFI_SSID = "OctopusChurch";
 const char * WIFI_PASSWORD = "BishopNemo";
 
+static bool is_wifi_started = false;
+static bool is_wifi_connected = false;
+
 static int wifi_connect_retries = 0;
 
-static QueueHandle_t wifi_cmd_queue;
+static QueueHandle_t wifi_msg_queue;
+static QueueHandle_t wifi_ping_queue;
 
 /** @brief Post a command message to the WiFi task
  *  @param msg The command message to post
  */
-void wifi_post_cmd(WifiCommandMsg_t msg)
+BaseType_t wifi_post_msg(WifiMsg_t msg)
 {
-  if (wifi_cmd_queue != NULL)
+  if (wifi_msg_queue != NULL)
   {
-    xQueueSend(wifi_cmd_queue, &msg, portMAX_DELAY);
+    return xQueueSend(wifi_msg_queue, &msg, pdMS_TO_TICKS(50));
   }
+
+  ESP_LOGW(TAG_WIFI, "Failed to post WiFi message. Message queue is full");
+  return errQUEUE_FULL;
 }
 
 /** @brief Set the WiFi to AP mode 
  */
 void wifi_set_ap_mode()
 {
-  WifiCommandMsg_t msg;
-  msg.cmd = WIFI_CMD_MODE_AP;
+  WifiMsg_t msg = {0};
+  msg.type = WIFI_CMD_MODE_AP;
 
-  wifi_post_cmd(msg);
+  wifi_post_msg(msg);
 }
 
 /** @brief Set the WiFi credentials to attempt to connect in STA mode
@@ -72,16 +75,16 @@ void wifi_set_ap_mode()
  */
 void wifi_set_sta_credentials(const char *ssid, const char *password)
 {
-  WifiCommandMsg_t msg = {0};
-  msg.cmd = WIFI_CMD_SET_STA_CREDENTIALS;
+  WifiMsg_t msg = {0};
+  msg.type = WIFI_CMD_SET_STA_CREDENTIALS;
 
   strncpy(msg.data.credentials.ssid, ssid, MAX_SSID_LEN);
-  msg.data.credentials.ssid[MAX_SSID_LEN] = '\0';
+  msg.data.credentials.ssid[sizeof(msg.data.credentials.ssid) - 1] = '\0';
 
   strncpy(msg.data.credentials.password, password, MAX_PASSPHRASE_LEN);
-  msg.data.credentials.password[MAX_PASSPHRASE_LEN] = '\0';
+  msg.data.credentials.password[sizeof(msg.data.credentials.password) - 1] = '\0';
 
-  xQueueSend(wifi_cmd_queue, &msg, portMAX_DELAY);
+  wifi_post_msg(msg);
 }
 
 /** @brief Event handler for WiFi and IP events
@@ -93,56 +96,35 @@ void wifi_set_sta_credentials(const char *ssid, const char *password)
 static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                                int32_t event_id, void *event_data)
 {
+  WifiMsg_t msg = {0};
+  msg.type = WIFI_MSG_NONE;
+
   if (event_base == WIFI_EVENT)
   {
     switch (event_id)
     {
       case WIFI_EVENT_STA_START:
-        is_wifi_started = true;
-        esp_wifi_connect();
+        msg.type = WIFI_EVT_STA_START;
         break;
       case WIFI_EVENT_STA_DISCONNECTED:
-        is_wifi_connected = false;
-
-        if (wifi_connect_retries >= WIFI_CONNECT_MAX_RETRIES)
-        {
-          ESP_LOGW(TAG, "Failed to connect to SSID:%s after %d attempts. Stopping...", WIFI_SSID, wifi_connect_retries);
-          esp_wifi_stop();
-
-          state_machine_post_event(APP_EVENT_WIFI_DISCONNECTED);
-        }
-
-        esp_wifi_connect(); // retry
-        wifi_connect_retries++;
-
+        msg.type = WIFI_EVT_STA_DISCONNECTED;
         break;
       case WIFI_EVENT_AP_START:
-        is_wifi_started = true;
-
-        ESP_LOGI(TAG, "Access Point Started");
-        state_machine_post_event(APP_EVENT_AP_STARTED);
+        msg.type = WIFI_EVT_AP_START;
         break;
       case WIFI_EVENT_AP_STOP:
-        is_wifi_started = false;
-
-        ESP_LOGI(TAG, "Access Point Stopped");
-        break;
-      default:
+        msg.type = WIFI_EVT_AP_STOP;
         break;
     }
   }
-  else if (event_base == IP_EVENT)
+  else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP)
   {
-    if (event_id == IP_EVENT_STA_GOT_IP)
-    {
-      is_wifi_connected = true;
+    msg.type = WIFI_EVT_STA_GOT_IP;
+  }
 
-      ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
-      ESP_LOGI(TAG, "Got IP: " IPSTR, IP2STR(&event->ip_info.ip));
-  
-      state_machine_post_event(APP_EVENT_WIFI_CONNECTED);
-      wifi_connect_retries = 0; // reset retry counter
-    }
+  if (msg.type != WIFI_MSG_NONE)
+  {
+    wifi_post_msg(msg);
   }
 }
 
@@ -164,7 +146,7 @@ static void wifi_on_ping_success(esp_ping_handle_t hdl, void *args)
   esp_ping_get_profile(hdl, ESP_PING_PROF_TTL, &ttl, sizeof(ttl));
   esp_ping_get_profile(hdl, ESP_PING_PROF_TIMEGAP, &elapsed_time, sizeof(elapsed_time));
 
-  ESP_LOGI(TAG, "%d bytes from %s icmp_seq=%d ttl=%d time=%d ms",
+  ESP_LOGI(TAG_WIFI, "%d bytes from %s icmp_seq=%d ttl=%d time=%d ms",
            recv_len, inet_ntoa(target_addr.u_addr.ip4), seqno, ttl, elapsed_time);
 }
 
@@ -178,7 +160,7 @@ static void wifi_on_ping_timeout(esp_ping_handle_t hdl, void *args)
   uint16_t seqno;
   esp_ping_get_profile(hdl, ESP_PING_PROF_IPADDR, &target_addr, sizeof(target_addr));
   esp_ping_get_profile(hdl, ESP_PING_PROF_SEQNO, &seqno, sizeof(seqno));
-  ESP_LOGW(TAG, "From %s icmp_seq=%d timeout", inet_ntoa(target_addr.u_addr.ip4), seqno);
+  ESP_LOGW(TAG_WIFI, "From %s icmp_seq=%d timeout", inet_ntoa(target_addr.u_addr.ip4), seqno);
 }
 
 /** @brief On Ping End Callback
@@ -191,7 +173,7 @@ static void wifi_on_ping_end(esp_ping_handle_t hdl, void *args)
   esp_ping_get_profile(hdl, ESP_PING_PROF_REQUEST, &transmitted, sizeof(transmitted));
   esp_ping_get_profile(hdl, ESP_PING_PROF_REPLY, &received, sizeof(received));
   esp_ping_get_profile(hdl, ESP_PING_PROF_DURATION, &duration, sizeof(duration));
-  ESP_LOGI(TAG, "Ping finished: %d packets transmitted, %d received, time %dms",
+  ESP_LOGI(TAG_WIFI, "Ping finished: %d packets transmitted, %d received, time %dms",
            transmitted, received, duration);
 
   esp_ping_delete_session(hdl);
@@ -208,8 +190,11 @@ void wifi_set_config_sta(const char* ssid, const char* password)
   strlcpy((char *)wifi_config.sta.password, password, sizeof(wifi_config.sta.password));
   wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
 
-  ESP_LOGI(TAG, "Setting WiFi SSID:%s password:%s", wifi_config.sta.ssid, wifi_config.sta.password);
-  ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+  ESP_LOGI(TAG_WIFI, "Setting WiFi SSID:%s password:%s", wifi_config.sta.ssid, wifi_config.sta.password);
+  if (esp_wifi_set_config(WIFI_IF_STA, &wifi_config) != ESP_OK)
+  {
+    ESP_LOGE(TAG_WIFI, "Failed to set WiFi config. STA SSID:%s and password:%s", wifi_config.sta.ssid, wifi_config.sta.password);
+  }
 }
 
 /** @brief Set WiFi configuration for AP mode
@@ -230,8 +215,11 @@ void wifi_set_config_ap(const char *ssid, const char *password)
     ap_config.ap.authmode = WIFI_AUTH_OPEN; // open AP if no password
   }
 
-  ESP_LOGI(TAG, "Setting AP SSID:%s password:%s", ap_config.ap.ssid, ap_config.ap.password);
-  ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_config));
+  ESP_LOGI(TAG_WIFI, "Setting AP SSID:%s password:%s", ap_config.ap.ssid, ap_config.ap.password);
+  if (esp_wifi_set_config(WIFI_IF_AP, &ap_config) != ESP_OK)
+  {
+    ESP_LOGE(TAG_WIFI, "Failed to set WiFi config. AP SSID:%s and password:%s", ap_config.ap.ssid, ap_config.ap.password);
+  }
 }
 
 /** @brief Ping a host to check connectivity
@@ -241,10 +229,10 @@ void wifi_ping(const char * host)
 {
   if (host == NULL)
   {
-    ESP_LOGE(TAG, "Host is NULL");
+    ESP_LOGE(TAG_WIFI, "Host is NULL");
     return;
   }
-  ESP_LOGI(TAG, "Pinging host: %s", host);
+  ESP_LOGI(TAG_WIFI, "Pinging host: %s", host);
 
   // Resolve hostname to IP
   ip_addr_t target_addr;
@@ -253,7 +241,7 @@ void wifi_ping(const char * host)
   int err = getaddrinfo(host, NULL, &hint, &res);
   if (err != 0 || res == NULL)
   {
-    ESP_LOGE(TAG, "DNS lookup failed for %s", host);
+    ESP_LOGE(TAG_WIFI, "DNS lookup failed for %s", host);
     return;
   }
   struct sockaddr_in *addr4 = (struct sockaddr_in *)res->ai_addr;
@@ -281,96 +269,165 @@ void wifi_ping(const char * host)
 void wifi_initialize()
 {
   // Initialize TCP/IP network interface and event loop
-  ESP_ERROR_CHECK(esp_netif_init());
-  ESP_ERROR_CHECK(esp_event_loop_create_default());
+  if (esp_netif_init() != ESP_OK)
+  {
+    ESP_LOGE(TAG_WIFI, "Failed to initialize TCP/IP network interface");
+    return;
+  }
+
+  if (esp_event_loop_create_default() != ESP_OK)
+  {
+    ESP_LOGE(TAG_WIFI, "Failed to initialize TCP/IP event loop");
+    return;
+  }
 
   esp_netif_create_default_wifi_sta();
   esp_netif_create_default_wifi_ap();
 
   // Create event handler for WiFi and IP events
   esp_event_handler_instance_t instance_any_id;
+  if (esp_event_handler_instance_register(WIFI_EVENT,
+                                          ESP_EVENT_ANY_ID,
+                                          &wifi_event_handler,
+                                          NULL,
+                                          &instance_any_id) != ESP_OK)
+  {
+    ESP_LOGE(TAG_WIFI, "Failed to create event handler for WiFi events");
+    return;
+  }
+
   esp_event_handler_instance_t instance_got_ip;
-  ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
-                                                      ESP_EVENT_ANY_ID,
-                                                      &wifi_event_handler,
-                                                      NULL,
-                                                      &instance_any_id));
-  ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT,
-                                                      IP_EVENT_STA_GOT_IP,
-                                                      &wifi_event_handler,
-                                                      NULL,
-                                                      &instance_got_ip));
+  if (esp_event_handler_instance_register(IP_EVENT,
+                                          IP_EVENT_STA_GOT_IP,
+                                          &wifi_event_handler,
+                                          NULL,
+                                          &instance_got_ip) != ESP_OK)
+  {
+    ESP_LOGE(TAG_WIFI, "Failed to create event handler for IP events");
+    return;
+  }
 
   // Configure Wifi
   wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-  ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+  if (esp_wifi_init(&cfg) != ESP_OK)
+  {
+    ESP_LOGE(TAG_WIFI, "Failed initialize WiFi");
+    return;
+  }
 }
 
 /** @brief WiFi Task
  */
 static void wifi_task(void *args)
 {
-  WifiCommandMsg_t msg;  
-  ESP_LOGI(TAG, "WiFi Task Started");
+  WifiMsg_t msg;
+  ESP_LOGI(TAG_WIFI, "WiFi Task Started");
 
   while (true)
   {
-    if (xQueueReceive(wifi_cmd_queue, &msg, portMAX_DELAY))
+    if (xQueueReceive(wifi_msg_queue, &msg, portMAX_DELAY))
     {
-      switch (msg.cmd)
+      switch (msg.type)
       {
-        case WIFI_CMD_MODE_AP:
-          ESP_LOGI(TAG, "Received credentials and attempting to connect in STA mode");
-          if (is_wifi_connected)
-          {
-            ESP_ERROR_CHECK(esp_wifi_disconnect());
-          }
-          if (is_wifi_started)
-          {
-            ESP_ERROR_CHECK(esp_wifi_stop());
-          }
-          ESP_LOGI(TAG, "Starting WiFi in AP mode");
-          ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
-          wifi_set_config_ap(WIFI_AP_SSID, WIFI_AP_PASSWORD);
-          ESP_ERROR_CHECK(esp_wifi_start());
-          break;
-        case WIFI_CMD_MODE_AP_STA:
-          ESP_LOGI(TAG, "Received credentials and attempting to connect in STA mode");
-          if (is_wifi_connected)
-          {
-            ESP_ERROR_CHECK(esp_wifi_disconnect());
-          }
-          if (is_wifi_started)
-          {
-            ESP_ERROR_CHECK(esp_wifi_stop());
-          }
-          ESP_LOGI(TAG, "Starting WiFi in AP+STA mode");
-          ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
-          wifi_set_config_ap(WIFI_AP_SSID, WIFI_AP_PASSWORD);
-          wifi_set_config_sta(WIFI_SSID, WIFI_PASSWORD);
-          ESP_ERROR_CHECK(esp_wifi_start());
-          break;
-        case WIFI_CMD_SET_STA_CREDENTIALS:
-          ESP_LOGI(TAG, "Received credentials and attempting to connect in STA mode");
-          if (is_wifi_connected)
-          {
-            ESP_ERROR_CHECK(esp_wifi_disconnect());
-          }
-          if (is_wifi_started)
-          {
-            ESP_ERROR_CHECK(esp_wifi_stop());
-          }
-          ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-          wifi_set_config_sta(msg.data.credentials.ssid, msg.data.credentials.password);
-          ESP_ERROR_CHECK(esp_wifi_start());
-          break;
-        case WIFI_CMD_PING:
-          wifi_ping("www.google.com");
-          break;
-        default:
-          ESP_LOGW(TAG, "Unknown command: %d", msg.cmd);
-          break;
+      // --- Commands ---
+      case WIFI_CMD_MODE_AP:
+        ESP_LOGI(TAG_WIFI, "Switching to AP mode");
+        if (is_wifi_connected)
+          esp_wifi_disconnect();
+        if (is_wifi_started)
+          esp_wifi_stop();
+        esp_wifi_set_mode(WIFI_MODE_AP);
+        wifi_set_config_ap(WIFI_AP_SSID, WIFI_AP_PASSWORD);
+        esp_wifi_start();
+        break;
+
+      case WIFI_CMD_MODE_AP_STA:
+        ESP_LOGI(TAG_WIFI, "Switching to AP+STA mode");
+        if (is_wifi_connected)
+          esp_wifi_disconnect();
+        if (is_wifi_started)
+          esp_wifi_stop();
+        esp_wifi_set_mode(WIFI_MODE_APSTA);
+        wifi_set_config_ap(WIFI_AP_SSID, WIFI_AP_PASSWORD);
+        wifi_set_config_sta(WIFI_SSID, WIFI_PASSWORD);
+        esp_wifi_start();
+        break;
+
+      case WIFI_CMD_SET_STA_CREDENTIALS:
+        ESP_LOGI(TAG_WIFI, "Connecting with new STA credentials");
+        if (is_wifi_connected)
+          esp_wifi_disconnect();
+        if (is_wifi_started)
+          esp_wifi_stop();
+        esp_wifi_set_mode(WIFI_MODE_STA);
+        wifi_set_config_sta(msg.data.credentials.ssid,
+                            msg.data.credentials.password);
+        esp_wifi_start();
+        break;
+
+      case WIFI_CMD_PING:
+      {
+        WifiPingRequest_t req;
+        strlcpy(req.host, "www.google.com", sizeof(req.host));
+        xQueueSend(wifi_ping_queue, &req, 0);
+        break;
       }
+
+      // --- Events ---
+      case WIFI_EVT_STA_START:
+        is_wifi_started = true;
+        esp_wifi_connect();
+        break;
+
+      case WIFI_EVT_STA_DISCONNECTED:
+        is_wifi_connected = false;
+        if (++wifi_connect_retries >= WIFI_CONNECT_MAX_RETRIES)
+        {
+          ESP_LOGW(TAG_WIFI, "Max retries reached, stopping STA");
+          esp_wifi_stop();
+          state_machine_post_event(APP_EVENT_WIFI_DISCONNECTED);
+          wifi_connect_retries = 0;
+        }
+        else
+        {
+          esp_wifi_connect();
+        }
+        break;
+
+      case WIFI_EVT_AP_START:
+        is_wifi_started = true;
+        state_machine_post_event(APP_EVENT_AP_STARTED);
+        break;
+
+      case WIFI_EVT_AP_STOP:
+        is_wifi_started = false;
+        break;
+
+      case WIFI_EVT_STA_GOT_IP:
+        is_wifi_connected = true;
+        wifi_connect_retries = 0;
+        state_machine_post_event(APP_EVENT_WIFI_CONNECTED);
+        break;
+
+      default:
+        ESP_LOGW(TAG_WIFI, "Unknown WiFi message %d", msg.type);
+        break;
+      }
+    }
+  }
+}
+
+/** @brief Wifi Ping Task
+ *  @param arg 
+ */
+static void wifi_ping_task(void *args)
+{
+  WifiPingRequest_t req;
+  while (true)
+  {
+    if (xQueueReceive(wifi_ping_queue, &req, portMAX_DELAY))
+    {
+      wifi_ping(req.host);
     }
   }
 }
@@ -379,14 +436,22 @@ static void wifi_task(void *args)
  */
 void wifi_task_init()
 {
-  wifi_cmd_queue = xQueueCreate(10, sizeof(WifiCommandMsg_t));
-  if (wifi_cmd_queue == NULL)
+  wifi_msg_queue = xQueueCreate(20, sizeof(WifiMsg_t));
+  if (wifi_msg_queue == NULL)
   {
-    ESP_LOGE(TAG, "Failed to create command queue");
+    ESP_LOGE(TAG_WIFI, "Failed to create Wifi message queue");
+    return;
+  }
+
+  wifi_ping_queue = xQueueCreate(4, sizeof(WifiPingRequest_t));
+  if (wifi_ping_queue == NULL)
+  {
+    ESP_LOGE(TAG_WIFI, "Failed to create Wifi ping queue");
     return;
   }
 
   wifi_initialize();
-
-  xTaskCreate(wifi_task, TAG, 4096, NULL, 10, NULL);
+  
+  xTaskCreate(wifi_task, TAG_WIFI, 4096, NULL, 10, NULL);
+  xTaskCreate(wifi_ping_task, TAG_PING, 4096, NULL, 5, NULL);
 }

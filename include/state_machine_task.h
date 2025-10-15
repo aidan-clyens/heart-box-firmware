@@ -6,6 +6,8 @@ extern "C"
 {
 #endif
 
+typedef int BaseType_t;
+
 /** @enum eAppEvent_t
  *  @brief Events for the State Machine task
  */
@@ -18,7 +20,7 @@ typedef enum
 } eAppEvent_t;
 
 void state_machine_task_init();
-void state_machine_post_event(eAppEvent_t event);
+BaseType_t state_machine_post_event(eAppEvent_t event);
 
 #ifdef __cplusplus
 }

@@ -29,8 +29,11 @@ void gpio_initialize()
   gpio_reset_pin(HEART_LED_ARRAY_PIN);
   gpio_set_direction(HEART_LED_ARRAY_PIN, GPIO_MODE_OUTPUT);
 
-  gpio_reset_pin(LED_STATUS_PIN);
-  gpio_set_direction(LED_STATUS_PIN, GPIO_MODE_OUTPUT);
+  gpio_reset_pin(LED_STATUS_PIN_1);
+  gpio_set_direction(LED_STATUS_PIN_1, GPIO_MODE_OUTPUT);
+
+  gpio_reset_pin(LED_STATUS_PIN_2);
+  gpio_set_direction(LED_STATUS_PIN_2, GPIO_MODE_OUTPUT);
 
   gpio_config_t button_pin_config = {
       .pin_bit_mask = (1ULL << BUTTON_PIN),
@@ -82,10 +85,10 @@ static void gpio_led_blink_task(void *arg)
 {
   while (true)
   {
-    gpio_set_level(LED_STATUS_PIN, 1);
+    gpio_set_level(LED_STATUS_PIN_2, 1);
     vTaskDelay(1000 / portTICK_PERIOD_MS);
 
-    gpio_set_level(LED_STATUS_PIN, 0);
+    gpio_set_level(LED_STATUS_PIN_2, 0);
     vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
 }

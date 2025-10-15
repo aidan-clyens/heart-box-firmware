@@ -72,22 +72,18 @@ static esp_err_t http_wifi_post_handler(httpd_req_t *req)
   char ssid[32] = {0};
   char password[64] = {0};
 
-  // Very simple parsing (for demo)
-  char *ssid_ptr = strstr(buf, "ssid=");
-  char *pass_ptr = strstr(buf, "password=");
-  if (ssid_ptr)
+  if (httpd_query_key_value(buf, "ssid", ssid, sizeof(ssid)) == ESP_OK)
   {
-    sscanf(ssid_ptr, "ssid=%31[^&]", ssid);
+    ESP_LOGI(TAG_HTTP, "SSID: %s", ssid);
   }
-  if (pass_ptr)
+  if (httpd_query_key_value(buf, "password", password, sizeof(password)) == ESP_OK)
   {
-    sscanf(pass_ptr, "password=%63s", password);
+    ESP_LOGI(TAG_HTTP, "Password: %s", password);
   }
 
   ESP_LOGI(TAG_HTTP, "Parsed SSID: %s", ssid);
   ESP_LOGI(TAG_HTTP, "Parsed Password: %s", password);
 
-  // TODO - Pass SSID and Password
   wifi_set_sta_credentials(ssid, password);
 
   // Send response back to client

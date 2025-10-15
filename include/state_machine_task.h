@@ -14,6 +14,7 @@ typedef enum
   APP_EVENT_WIFI_CONNECTED,
   APP_EVENT_WIFI_DISCONNECTED,
   APP_EVENT_AP_STARTED,
+  APP_EVENT_BUTTON_PRESSED,
 } eAppEvent_t;
 
 void state_machine_task_init();

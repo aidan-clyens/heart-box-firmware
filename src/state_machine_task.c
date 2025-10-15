@@ -4,6 +4,7 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 
+#include "gpio_task.h"
 #include "wifi_task.h"
 #include "http_server.h"
 
@@ -71,6 +72,9 @@ static void state_machine_task(void *args)
       }
       break;
     case STATE_PROVISIONING:
+      // Send message to the GPIO task to turn on the blinking LED
+      gpio_set_state(GPIO_STATE_LED_BLINK);
+
       // Start HTTP server for provisioning
       http_server = http_start_webserver();
       if (http_server == NULL)
@@ -82,12 +86,22 @@ static void state_machine_task(void *args)
         ESP_LOGI(TAG, "HTTP server started");
       }
 
-      while (true)
+      if (xQueueReceive(state_machine_event_queue, &event, portMAX_DELAY))
       {
-        vTaskDelay(pdMS_TO_TICKS(5000));
+        if (event == APP_EVENT_WIFI_CONNECTED)
+        {
+          state_machine_change_state(STATE_CONNECTED);
+        }
       }
       break;
     case STATE_CONNECTED:
+      // Send message to the GPIO task to turn on the LED
+      gpio_set_state(GPIO_STATE_LED_SOLID);
+
+      while (true)
+      {
+        vTaskDelay(pdMS_TO_TICKS(1000));
+      }
       break;
     default:
       break;

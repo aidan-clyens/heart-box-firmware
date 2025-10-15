@@ -15,7 +15,18 @@ extern "C"
 
 #define BUTTON_DEBOUNCE_TIME_MS 50
 
+/** @enum eGpioState_t
+ *  @brief States for the GPIO task
+ */
+typedef enum
+{
+  GPIO_STATE_LED_BLINK,
+  GPIO_STATE_LED_SOLID,
+  GPIO_STATE_LED_OFF,
+} eGpioState_t;
+
 void gpio_task_init();
+void gpio_set_state(eGpioState_t state);
 
 #ifdef __cplusplus
 }

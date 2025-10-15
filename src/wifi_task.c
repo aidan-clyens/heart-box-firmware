@@ -142,8 +142,6 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
   
       state_machine_post_event(APP_EVENT_WIFI_CONNECTED);
       wifi_connect_retries = 0; // reset retry counter
-  
-      state_machine_post_event(APP_EVENT_WIFI_CONNECTED);
     }
   }
 }

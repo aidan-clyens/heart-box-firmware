@@ -1,52 +1,38 @@
 #include "gpio_task.h"
+#include "generic_task.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
-#include "freertos/portmacro.h"
 #include "esp_log.h"
 
 #include "state_machine_task.h"
 
-const char * TAG_BUTTON_TASK = "gpio_button_task";
-const char * TAG_STATUS_TASK = "gpio_status_task";
+static const char *TAG_GPIO = "GPIO_TASK";
 
-static portMUX_TYPE gpio_mux = portMUX_INITIALIZER_UNLOCKED;
-
-static TaskHandle_t gpio_status_task_handle = NULL;
+static GenericTask gpio_task;
 static SemaphoreHandle_t gpio_button_semaphore = NULL;
 static TimerHandle_t gpio_blink_timer = NULL;
 
-volatile eGpioState_t gpio_current_state = GPIO_STATE_LED_OFF;
+/** @brief Post a command message to the GPIO task
+ *  @param msg The command message to post
+ */
+BaseType_t gpio_post_msg(GpioMsg_t msg)
+{
+  return generic_task_post_msg(&gpio_task, &msg, sizeof(GpioMsg_t));
+}
 
-/** @brief Change the state of the GPIO status task
+/** @brief Change the state of the GPIO status LED
  *  @param state The state to change to
  */
 void gpio_set_state(eGpioState_t state)
 {
-  taskENTER_CRITICAL(&gpio_mux);
-  gpio_current_state = state;
-  taskEXIT_CRITICAL(&gpio_mux);
-  if (gpio_status_task_handle)
-  {
-    xTaskNotifyGive(gpio_status_task_handle);
-  }
-}
-
-/** @brief Get the current state of the GPIO status task 
- *  @return eGpioState_t 
- */
-static inline eGpioState_t gpio_get_state(void)
-{
-  eGpioState_t s;
-  taskENTER_CRITICAL(&gpio_mux);
-  s = gpio_current_state;
-  taskEXIT_CRITICAL(&gpio_mux);
-  return s;
+  GpioMsg_t msg = {.type = GPIO_CMD_SET_STATE, .data.state = state};
+  gpio_post_msg(msg);
 }
 
 /** @brief Blink the status LED at a periodic interval
- *  @param xTimer 
+ *  @param xTimer
  */
 static void gpio_blink_timer_cb(TimerHandle_t xTimer)
 {
@@ -67,9 +53,9 @@ static void IRAM_ATTR gpio_isr_handler(void *arg)
   }
 }
 
-/** @brief Initialize GPIO
+/** @brief Initialize GPIO hardware
  */
-void gpio_initialize()
+static void gpio_initialize(void)
 {
   gpio_reset_pin(HEART_LED_ARRAY_PIN);
   gpio_set_direction(HEART_LED_ARRAY_PIN, GPIO_MODE_OUTPUT);
@@ -83,30 +69,30 @@ void gpio_initialize()
   gpio_config_t button_pin_config = {
       .pin_bit_mask = (1ULL << BUTTON_PIN),
       .mode = GPIO_MODE_INPUT,
-      .pull_up_en = GPIO_PULLUP_DISABLE,     // disable internal pull-up
-      .pull_down_en = GPIO_PULLDOWN_DISABLE, // disable internal pull-down
-      .intr_type = GPIO_INTR_ANYEDGE         // rising + falling edges
-  };
+      .pull_up_en = GPIO_PULLUP_DISABLE,
+      .pull_down_en = GPIO_PULLDOWN_DISABLE,
+      .intr_type = GPIO_INTR_ANYEDGE};
   gpio_config(&button_pin_config);
 
-  // Create binary semaphore
   gpio_button_semaphore = xSemaphoreCreateBinary();
   if (gpio_button_semaphore == NULL)
   {
-    ESP_LOGE(TAG_BUTTON_TASK, "Failed to create Binary Semaphore");
+    ESP_LOGE(TAG_GPIO, "Failed to create Binary Semaphore");
     return;
   }
 
-  // Install ISR for button pin
   gpio_install_isr_service(0);
   gpio_isr_handler_add(BUTTON_PIN, gpio_isr_handler, (void *)BUTTON_PIN);
 }
 
 /** @brief GPIO Button Task
+ *
+ *  Waits on the button semaphore, debounces, then posts a message
+ *  to the GPIO task queue.
  */
 static void gpio_button_task(void *args)
 {
-  ESP_LOGI(TAG_BUTTON_TASK, "GPIO Task Started");
+  ESP_LOGI(TAG_GPIO, "GPIO Button Task Started");
 
   int button_level = 0;
 
@@ -116,15 +102,17 @@ static void gpio_button_task(void *args)
     {
       gpio_intr_disable(BUTTON_PIN);
 
-      // Button debouncing
       vTaskDelay(BUTTON_DEBOUNCE_TIME_MS / portTICK_PERIOD_MS);
 
-      // Check if the button is pressed or released
       button_level = gpio_get_level(BUTTON_PIN);
-      ESP_LOGI(TAG_BUTTON_TASK, "Button level: %d", button_level);
+      ESP_LOGI(TAG_GPIO, "Button level: %d", button_level);
       gpio_set_level(HEART_LED_ARRAY_PIN, button_level);
 
-      // Send message to the state machine task
+      // Post event to GPIO task
+      GpioMsg_t msg = {.type = GPIO_EVT_BUTTON_PRESSED, .data.button_level = button_level};
+      gpio_post_msg(msg);
+
+      // Also notify state machine
       state_machine_post_event(APP_EVENT_BUTTON_PRESSED);
 
       gpio_intr_enable(BUTTON_PIN);
@@ -132,53 +120,79 @@ static void gpio_button_task(void *args)
   }
 }
 
-/** @brief GPIO Status Task
+/** @brief GPIO Task message handler
+ *  @param self    Pointer to the GenericTask
+ *  @param msg_buf Pointer to the received message buffer
+ *  @param msg_len Length of the message buffer
  */
-static void gpio_status_task(void *arg)
+static void gpio_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
 {
-  gpio_status_task_handle = xTaskGetCurrentTaskHandle();
-  ESP_LOGI(TAG_STATUS_TASK, "GPIO Status Task Started");
-
-  while (true)
+  if (msg_len != sizeof(GpioMsg_t))
   {
-    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-    eGpioState_t current_state = gpio_get_state();
-    switch (current_state)
+    return;
+  }
+
+  GpioMsg_t *msg = (GpioMsg_t *)msg_buf;
+
+  switch (msg->type)
+  {
+  case GPIO_CMD_SET_STATE:
+    switch (msg->data.state)
     {
-      case GPIO_STATE_LED_SOLID:
-        if (gpio_blink_timer != NULL)
-        {
-          xTimerStop(gpio_blink_timer, 0);
-        }
+    case GPIO_STATE_LED_SOLID:
+      if (gpio_blink_timer != NULL)
+      {
+        xTimerStop(gpio_blink_timer, 0);
+      }
+      gpio_set_level(LED_STATUS_PIN_2, 1);
+      break;
 
-        gpio_set_level(LED_STATUS_PIN_2, 1);
-        break;
-      case GPIO_STATE_LED_BLINK:
-        if (gpio_blink_timer == NULL)
-        {
-          gpio_blink_timer = xTimerCreate("blink", pdMS_TO_TICKS(1000), pdTRUE, NULL, gpio_blink_timer_cb);
-        }
-        xTimerStart(gpio_blink_timer, 0);
-        break;
-      case GPIO_STATE_LED_OFF:
-      default:
-        if (gpio_blink_timer != NULL)
-        {
-          xTimerStop(gpio_blink_timer, 0);
-        }
+    case GPIO_STATE_LED_BLINK:
+      if (gpio_blink_timer == NULL)
+      {
+        gpio_blink_timer = xTimerCreate("blink",
+                                        pdMS_TO_TICKS(1000),
+                                        pdTRUE,
+                                        NULL,
+                                        gpio_blink_timer_cb);
+      }
+      xTimerStart(gpio_blink_timer, 0);
+      break;
 
-        gpio_set_level(LED_STATUS_PIN_2, 0);
-        break;
+    case GPIO_STATE_LED_OFF:
+    default:
+      if (gpio_blink_timer != NULL)
+      {
+        xTimerStop(gpio_blink_timer, 0);
+      }
+      gpio_set_level(LED_STATUS_PIN_2, 0);
+      break;
     }
+    break;
+
+  case GPIO_EVT_BUTTON_PRESSED:
+    ESP_LOGI(TAG_GPIO, "Button pressed event received, level=%d", msg->data.button_level);
+    break;
+
+  default:
+    ESP_LOGW(TAG_GPIO, "Unknown GPIO message %d", msg->type);
+    break;
   }
 }
 
 /** @brief Create GPIO Tasks
  */
-void gpio_task_init()
+void gpio_task_init(void)
 {
   gpio_initialize();
 
-  xTaskCreate(gpio_button_task, TAG_BUTTON_TASK, 2048, NULL, 15, NULL);
-  xTaskCreate(gpio_status_task, TAG_STATUS_TASK, 2048, NULL, 10, NULL);
+  // Button task remains a raw FreeRTOS task
+  xTaskCreate(gpio_button_task, TAG_GPIO, 2048, NULL, 15, NULL);
+
+  // Status task uses GenericTask with queue
+  gpio_task.name = TAG_GPIO;
+  gpio_task.on_init = NULL;
+  gpio_task.on_message = gpio_on_message;
+  gpio_task.item_size = sizeof(GpioMsg_t);
+  generic_task_start(&gpio_task, 2048, 10);
 }

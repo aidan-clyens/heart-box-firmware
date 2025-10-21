@@ -10,6 +10,8 @@
 
 #include "esp_log.h"
 
+#define DEBUG_MODE
+
 /** @enum eAppState_t
  *  @brief State Machine Application States
  */
@@ -54,7 +56,11 @@ static void state_machine_enter_state(eAppState_t new_state)
       }
 
       // TODO: read WiFi creds, decide STA vs AP
+#ifdef DEBUG_MODE
+      wifi_set_sta_credentials("OctopusChurch", "BishopNemo");
+#else
       wifi_set_ap_mode();
+#endif
       break;
 
     case STATE_PROVISIONING:
@@ -101,6 +107,12 @@ static void state_machine_task(void *args)
           {
             ESP_LOGI(TAG, "Transition: %d -> %d", current_state, STATE_PROVISIONING);
             current_state = STATE_PROVISIONING;
+            state_machine_enter_state(current_state);
+          }
+          else if (event == APP_EVENT_WIFI_CONNECTED)
+          {
+            ESP_LOGI(TAG, "Transition: %d -> %d", current_state, STATE_CONNECTED);
+            current_state = STATE_CONNECTED;
             state_machine_enter_state(current_state);
           }
           else

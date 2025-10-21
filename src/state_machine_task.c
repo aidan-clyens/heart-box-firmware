@@ -1,8 +1,5 @@
 #include "state_machine_task.h"
-
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "freertos/queue.h"
+#include "generic_task.h"
 
 #include "gpio_task.h"
 #include "wifi_task.h"
@@ -23,24 +20,11 @@ typedef enum
   STATE_CONNECTED,
 } eAppState_t;
 
-const char * TAG = "SM";
+static const char *TAG = "SM";
 
-static QueueHandle_t sm_event_queue;
+static GenericTask sm_task;
 static httpd_handle_t sm_http_server = NULL;
-
-/** @brief Post an event to the State Machine task
- *  @param event The event to post
- *  @return pdTRUE if the item was successfully posted, otherwise errQUEUE_FULL
- */
-BaseType_t state_machine_post_event(eAppEvent_t event)
-{
-  if (sm_event_queue != NULL)
-  {
-    return xQueueSend(sm_event_queue, &event, 0);
-  }
-
-  return errQUEUE_FULL;
-}
+static eAppState_t current_state = STATE_IDLE;
 
 /** @brief Transition to a new state
  *  @param new_state New state
@@ -49,125 +33,135 @@ static void state_machine_enter_state(eAppState_t new_state)
 {
   switch (new_state)
   {
-    case STATE_IDLE:
-      if (sm_http_server)
-      {
-        http_stop_webserver(sm_http_server);
-        sm_http_server = NULL;
-      }
+  case STATE_IDLE:
+    if (sm_http_server)
+    {
+      http_stop_webserver(sm_http_server);
+      sm_http_server = NULL;
+    }
 
-      // TODO: read WiFi creds, decide STA vs AP
 #ifdef DEBUG_MODE
-      wifi_set_sta_credentials("OctopusChurch", "BishopNemo");
+    wifi_set_sta_credentials("OctopusChurch", "BishopNemo");
 #else
-      wifi_set_ap_mode();
+    wifi_set_ap_mode();
 #endif
-      break;
+    break;
 
-    case STATE_PROVISIONING:
-      gpio_set_state(GPIO_STATE_LED_BLINK);
-      sm_http_server = http_start_webserver();
-      if (sm_http_server == NULL)
-      {
-        ESP_LOGE(TAG, "Failed to start HTTP server");
-      }
-      else
-      {
-        ESP_LOGI(TAG, "HTTP server started");
-      }
-      break;
+  case STATE_PROVISIONING:
+    gpio_set_state(GPIO_STATE_LED_BLINK);
+    sm_http_server = http_start_webserver();
+    if (sm_http_server == NULL)
+    {
+      ESP_LOGE(TAG, "Failed to start HTTP server");
+    }
+    else
+    {
+      ESP_LOGI(TAG, "HTTP server started");
+    }
+    break;
 
-    case STATE_CONNECTED:
-      gpio_set_state(GPIO_STATE_LED_SOLID);
-      if (sm_http_server)
-      {
-        http_stop_webserver(sm_http_server);
-        sm_http_server = NULL;
-      }
-      mqtt_connect();
-      break;
+  case STATE_CONNECTED:
+    gpio_set_state(GPIO_STATE_LED_SOLID);
+    if (sm_http_server)
+    {
+      http_stop_webserver(sm_http_server);
+      sm_http_server = NULL;
+    }
+    wifi_ping("airgahux2exxu-ats.iot.us-east-1.amazonaws.com");
+    mqtt_connect();
+    break;
   }
 }
 
-/** @brief State Machine Task
+/** @brief State Machine Task message handler
+ *  @param self    Pointer to the GenericTask
+ *  @param msg_buf Pointer to the received message buffer
+ *  @param msg_len Length of the message buffer
  */
-static void state_machine_task(void *args)
+static void state_machine_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
 {
-  ESP_LOGI(TAG, "State Machine Task Started");
-  eAppEvent_t event;
-  eAppState_t current_state = STATE_IDLE;
-  state_machine_enter_state(current_state);
-
-  while (true)
+  if (msg_len != sizeof(StateMachineMsg_t))
   {
-    if (xQueueReceive(sm_event_queue, &event, portMAX_DELAY))
-    {
-      switch (current_state)
-      {
-        case STATE_IDLE:
-          if (event == APP_EVENT_AP_STARTED)
-          {
-            ESP_LOGI(TAG, "Transition: %d -> %d", current_state, STATE_PROVISIONING);
-            current_state = STATE_PROVISIONING;
-            state_machine_enter_state(current_state);
-          }
-          else if (event == APP_EVENT_WIFI_CONNECTED)
-          {
-            ESP_LOGI(TAG, "Transition: %d -> %d", current_state, STATE_CONNECTED);
-            current_state = STATE_CONNECTED;
-            state_machine_enter_state(current_state);
-          }
-          else if (event == APP_EVENT_WIFI_DISCONNECTED)
-          {
-            ESP_LOGI(TAG, "WiFi Disconnected");
-          }
-          else
-          {
-            ESP_LOGW(TAG, "Unexpected event %d received in STATE_IDLE", event);
-          }
-          break;
-
-        case STATE_PROVISIONING:
-          if (event == APP_EVENT_WIFI_CONNECTED)
-          {
-            ESP_LOGI(TAG, "Transition: %d -> %d", current_state, STATE_CONNECTED);
-            current_state = STATE_CONNECTED;
-            state_machine_enter_state(current_state);
-          }
-          else
-          {
-            ESP_LOGW(TAG, "Unexpected event %d received in STATE_PROVISIONING", event);
-          }
-          break;
-
-        case STATE_CONNECTED:
-          if (event == APP_EVENT_WIFI_DISCONNECTED)
-          {
-            ESP_LOGI(TAG, "Transition: %d -> %d", current_state, STATE_IDLE);
-            current_state = STATE_IDLE;
-            state_machine_enter_state(current_state);
-          }
-          else
-          {
-            ESP_LOGW(TAG, "Unexpected event %d received in STATE_CONNECTED", event);
-          }
-          break;
-      }
-    }
+    return;
   }
+
+  StateMachineMsg_t *msg = (StateMachineMsg_t *)msg_buf;
+  eAppEvent_t event = msg->event;
+
+  switch (current_state)
+  {
+  case STATE_IDLE:
+    if (event == APP_EVENT_AP_STARTED)
+    {
+      ESP_LOGI(TAG, "Transition: %d -> %d", current_state, STATE_PROVISIONING);
+      current_state = STATE_PROVISIONING;
+      state_machine_enter_state(current_state);
+    }
+    else if (event == APP_EVENT_WIFI_CONNECTED)
+    {
+      ESP_LOGI(TAG, "Transition: %d -> %d", current_state, STATE_CONNECTED);
+      current_state = STATE_CONNECTED;
+      state_machine_enter_state(current_state);
+    }
+    else if (event == APP_EVENT_WIFI_DISCONNECTED)
+    {
+      ESP_LOGI(TAG, "WiFi Disconnected");
+    }
+    else
+    {
+      ESP_LOGW(TAG, "Unexpected event %d in STATE_IDLE", event);
+    }
+    break;
+
+  case STATE_PROVISIONING:
+    if (event == APP_EVENT_WIFI_CONNECTED)
+    {
+      ESP_LOGI(TAG, "Transition: %d -> %d", current_state, STATE_CONNECTED);
+      current_state = STATE_CONNECTED;
+      state_machine_enter_state(current_state);
+    }
+    else
+    {
+      ESP_LOGW(TAG, "Unexpected event %d in STATE_PROVISIONING", event);
+    }
+    break;
+
+  case STATE_CONNECTED:
+    if (event == APP_EVENT_WIFI_DISCONNECTED)
+    {
+      ESP_LOGI(TAG, "Transition: %d -> %d", current_state, STATE_IDLE);
+      current_state = STATE_IDLE;
+      state_machine_enter_state(current_state);
+    }
+    else
+    {
+      ESP_LOGW(TAG, "Unexpected event %d in STATE_CONNECTED", event);
+    }
+    break;
+  }
+}
+
+/** @brief Post an event to the State Machine task
+ *  @param event The event to post
+ *  @return pdTRUE if the item was successfully posted, otherwise errQUEUE_FULL
+ */
+BaseType_t state_machine_post_event(eAppEvent_t event)
+{
+  StateMachineMsg_t msg = {.event = event};
+  return generic_task_post_msg(&sm_task, &msg, sizeof(StateMachineMsg_t));
 }
 
 /** @brief Create State Machine Task
  */
-void state_machine_task_init()
+void state_machine_task_init(void)
 {
-  sm_event_queue = xQueueCreate(10, sizeof(eAppEvent_t));
-  if (sm_event_queue == NULL)
-  {
-    ESP_LOGE(TAG, "Failed to create event queue");
-    return;
-  }
+  sm_task.name = TAG;
+  sm_task.on_init = NULL; // no special init
+  sm_task.on_message = state_machine_on_message;
+  sm_task.item_size = sizeof(StateMachineMsg_t);
 
-  xTaskCreate(state_machine_task, TAG, 2048, NULL, 15, NULL);
-  vTaskDelay(pdMS_TO_TICKS(1000)); // Give time for task to start
+  current_state = STATE_IDLE;
+  state_machine_enter_state(current_state);
+
+  generic_task_start(&sm_task, 4096, 15);
 }

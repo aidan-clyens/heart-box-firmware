@@ -6,6 +6,7 @@
 
 #include "gpio_task.h"
 #include "wifi_task.h"
+#include "mqtt_task.h"
 #include "http_server.h"
 
 #include "esp_log.h"
@@ -83,6 +84,7 @@ static void state_machine_enter_state(eAppState_t new_state)
         http_stop_webserver(sm_http_server);
         sm_http_server = NULL;
       }
+      mqtt_connect();
       break;
   }
 }
@@ -114,6 +116,10 @@ static void state_machine_task(void *args)
             ESP_LOGI(TAG, "Transition: %d -> %d", current_state, STATE_CONNECTED);
             current_state = STATE_CONNECTED;
             state_machine_enter_state(current_state);
+          }
+          else if (event == APP_EVENT_WIFI_DISCONNECTED)
+          {
+            ESP_LOGI(TAG, "WiFi Disconnected");
           }
           else
           {

@@ -7,6 +7,7 @@
 #include "state_machine_task.h"
 #include "gpio_task.h"
 #include "wifi_task.h"
+#include "mqtt_task.h"
 
 #include <stdio.h>
 
@@ -33,6 +34,7 @@ void app_main()
 
   // Create tasks
   wifi_task_init();
+  mqtt_task_init();
   gpio_task_init();
   state_machine_task_init();
 }

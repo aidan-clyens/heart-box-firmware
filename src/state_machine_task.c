@@ -67,7 +67,7 @@ static void state_machine_enter_state(eAppState_t new_state)
       http_stop_webserver(sm_http_server);
       sm_http_server = NULL;
     }
-    wifi_ping("airgahux2exxu-ats.iot.us-east-1.amazonaws.com");
+    // wifi_ping("airgahux2exxu-ats.iot.us-east-1.amazonaws.com");
     mqtt_connect();
     break;
   }
@@ -76,34 +76,31 @@ static void state_machine_enter_state(eAppState_t new_state)
 /** @brief State Machine Task message handler
  *  @param self    Pointer to the GenericTask
  *  @param msg_buf Pointer to the received message buffer
- *  @param msg_len Length of the message buffer
  */
 static void state_machine_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
 {
-  if (msg_len != sizeof(StateMachineMsg_t))
-  {
-    return;
-  }
+  AppMsg_t *app_msg = (AppMsg_t*)msg_buf;
+  eAppMsgSource_t source = app_msg->source;
+  eAppMsgType_t event = app_msg->type;
 
-  StateMachineMsg_t *msg = (StateMachineMsg_t *)msg_buf;
-  eAppEvent_t event = msg->event;
+  ESP_LOGI(TAG, "Received message (type: %d) from %d", event, source);
 
   switch (current_state)
   {
   case STATE_IDLE:
-    if (event == APP_EVENT_AP_STARTED)
+    if (event == APP_EVT_AP_STARTED)
     {
       ESP_LOGI(TAG, "Transition: %d -> %d", current_state, STATE_PROVISIONING);
       current_state = STATE_PROVISIONING;
       state_machine_enter_state(current_state);
     }
-    else if (event == APP_EVENT_WIFI_CONNECTED)
+    else if (event == APP_EVT_WIFI_CONNECTED)
     {
       ESP_LOGI(TAG, "Transition: %d -> %d", current_state, STATE_CONNECTED);
       current_state = STATE_CONNECTED;
       state_machine_enter_state(current_state);
     }
-    else if (event == APP_EVENT_WIFI_DISCONNECTED)
+    else if (event == APP_EVT_WIFI_DISCONNECTED)
     {
       ESP_LOGI(TAG, "WiFi Disconnected");
     }
@@ -114,7 +111,7 @@ static void state_machine_on_message(GenericTask *self, void *msg_buf, size_t ms
     break;
 
   case STATE_PROVISIONING:
-    if (event == APP_EVENT_WIFI_CONNECTED)
+    if (event == APP_EVT_WIFI_CONNECTED)
     {
       ESP_LOGI(TAG, "Transition: %d -> %d", current_state, STATE_CONNECTED);
       current_state = STATE_CONNECTED;
@@ -127,7 +124,7 @@ static void state_machine_on_message(GenericTask *self, void *msg_buf, size_t ms
     break;
 
   case STATE_CONNECTED:
-    if (event == APP_EVENT_WIFI_DISCONNECTED)
+    if (event == APP_EVT_WIFI_DISCONNECTED)
     {
       ESP_LOGI(TAG, "Transition: %d -> %d", current_state, STATE_IDLE);
       current_state = STATE_IDLE;
@@ -145,10 +142,10 @@ static void state_machine_on_message(GenericTask *self, void *msg_buf, size_t ms
  *  @param event The event to post
  *  @return pdTRUE if the item was successfully posted, otherwise errQUEUE_FULL
  */
-BaseType_t state_machine_post_event(eAppEvent_t event)
+BaseType_t state_machine_post_event(eAppMsgType_t type, eAppMsgSource_t source)
 {
-  StateMachineMsg_t msg = {.event = event};
-  return generic_task_post_msg(&sm_task, &msg, sizeof(StateMachineMsg_t));
+  AppMsg_t app_msg = {.type = type, .source = source};
+  return generic_task_post_msg(&sm_task, &app_msg, sm_task.item_size);
 }
 
 /** @brief Create State Machine Task
@@ -158,7 +155,7 @@ void state_machine_task_init(void)
   sm_task.name = TAG;
   sm_task.on_init = NULL; // no special init
   sm_task.on_message = state_machine_on_message;
-  sm_task.item_size = sizeof(StateMachineMsg_t);
+  sm_task.item_size = sizeof(AppMsg_t);
 
   current_state = STATE_IDLE;
   state_machine_enter_state(current_state);

@@ -26,7 +26,7 @@ BaseType_t mqtt_post_msg(MqttMsg_t msg)
  */
 void mqtt_connect(void)
 {
-  MqttMsg_t msg = {.type = MQTT_CMD_CONNECT};
+  MqttMsg_t msg = {.type = APP_MQTT_CMD_CONNECT};
   mqtt_post_msg(msg);
 }
 
@@ -34,7 +34,7 @@ void mqtt_connect(void)
  */
 void mqtt_disconnect(void)
 {
-  MqttMsg_t msg = {.type = MQTT_CMD_DISCONNECT};
+  MqttMsg_t msg = {.type = APP_MQTT_CMD_DISCONNECT};
   mqtt_post_msg(msg);
 }
 
@@ -53,13 +53,13 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base,
   switch ((esp_mqtt_event_id_t)event_id)
   {
   case MQTT_EVENT_CONNECTED:
-    msg.type = MQTT_EVT_CONNECTED;
+    msg.type = APP_MQTT_EVT_CONNECTED;
     break;
   case MQTT_EVENT_DISCONNECTED:
-    msg.type = MQTT_EVT_DISCONNECTED;
+    msg.type = APP_MQTT_EVT_DISCONNECTED;
     break;
   case MQTT_EVENT_ERROR:
-    msg.type = MQTT_EVT_ERROR;
+    msg.type = APP_MQTT_EVT_ERROR;
     msg.data.error_code = event->error_handle->esp_tls_last_esp_err;
     break;
   default:
@@ -93,7 +93,7 @@ static void mqtt_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
 
   switch (msg->type)
   {
-  case MQTT_CMD_CONNECT:
+  case APP_MQTT_CMD_CONNECT:
   {
     esp_mqtt_client_config_t cfg = {
         .broker.address.uri = MQTT_BROKER_URL,
@@ -106,7 +106,7 @@ static void mqtt_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
     break;
   }
 
-  case MQTT_CMD_DISCONNECT:
+  case APP_MQTT_CMD_DISCONNECT:
     if (mqtt_client)
     {
       esp_mqtt_client_stop(mqtt_client);
@@ -116,15 +116,15 @@ static void mqtt_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
     }
     break;
 
-  case MQTT_EVT_CONNECTED:
+  case APP_MQTT_EVT_CONNECTED:
     ESP_LOGI(TAG_MQTT, "MQTT Connected");
     break;
 
-  case MQTT_EVT_DISCONNECTED:
+  case APP_MQTT_EVT_DISCONNECTED:
     ESP_LOGI(TAG_MQTT, "MQTT Disconnected");
     break;
 
-  case MQTT_EVT_ERROR:
+  case APP_MQTT_EVT_ERROR:
     ESP_LOGE(TAG_MQTT, "MQTT Error: %d", msg->data.error_code);
     break;
 

@@ -27,7 +27,7 @@ BaseType_t gpio_post_msg(GpioMsg_t msg)
  */
 void gpio_set_state(eGpioState_t state)
 {
-  GpioMsg_t msg = {.type = GPIO_CMD_SET_STATE, .data.state = state};
+  GpioMsg_t msg = {.type = APP_GPIO_CMD_SET_STATE, .data.state = state};
   gpio_post_msg(msg);
 }
 
@@ -109,11 +109,11 @@ static void gpio_button_task(void *args)
       gpio_set_level(HEART_LED_ARRAY_PIN, button_level);
 
       // Post event to GPIO task
-      GpioMsg_t msg = {.type = GPIO_EVT_BUTTON_PRESSED, .data.button_level = button_level};
+      GpioMsg_t msg = {.type = APP_GPIO_EVT_BUTTON_PRESSED, .data.button_level = button_level};
       gpio_post_msg(msg);
 
       // Also notify state machine
-      state_machine_post_event(APP_EVENT_BUTTON_PRESSED);
+      state_machine_post_event(APP_EVT_BUTTON_PRESSED, APP_GPIO);
 
       gpio_intr_enable(BUTTON_PIN);
     }
@@ -136,7 +136,7 @@ static void gpio_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
 
   switch (msg->type)
   {
-  case GPIO_CMD_SET_STATE:
+  case APP_GPIO_CMD_SET_STATE:
     switch (msg->data.state)
     {
     case GPIO_STATE_LED_SOLID:
@@ -170,7 +170,7 @@ static void gpio_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
     }
     break;
 
-  case GPIO_EVT_BUTTON_PRESSED:
+  case APP_GPIO_EVT_BUTTON_PRESSED:
     ESP_LOGI(TAG_GPIO, "Button pressed event received, level=%d", msg->data.button_level);
     break;
 

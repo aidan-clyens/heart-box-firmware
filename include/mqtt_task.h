@@ -8,29 +8,7 @@ extern "C"
 
 #include "freertos/FreeRTOS.h"
 
-/** @enum eMqttMsgType_t
- *  @brief Type of commands and events for the MQTT task
- */
-typedef enum
-{
-  MQTT_CMD_CONNECT,
-  MQTT_CMD_DISCONNECT,
-  MQTT_EVT_CONNECTED,
-  MQTT_EVT_DISCONNECTED,
-  MQTT_EVT_ERROR,
-} eMqttMsgType_t;
-
-/** @struct MqttMsg_t
- *  @brief Command or event message for the MQTT task
- */
-typedef struct
-{
-  eMqttMsgType_t type;
-  union
-  {
-    int error_code;
-  } data;
-} MqttMsg_t;
+#include "message_types.h"
 
 /** @brief Initialize and start the MQTT task */
 void mqtt_task_init(void);

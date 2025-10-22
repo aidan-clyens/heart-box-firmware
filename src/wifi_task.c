@@ -31,7 +31,7 @@ BaseType_t wifi_post_msg(WifiMsg_t msg)
  */
 void wifi_set_ap_mode(void)
 {
-  WifiMsg_t msg = {.type = WIFI_CMD_MODE_AP};
+  WifiMsg_t msg = {.type = APP_WIFI_CMD_MODE_AP};
   wifi_post_msg(msg);
 }
 
@@ -42,7 +42,7 @@ void wifi_set_ap_mode(void)
  */
 void wifi_set_sta_credentials(const char *ssid, const char *password)
 {
-  WifiMsg_t msg = {.type = WIFI_CMD_SET_STA_CREDENTIALS};
+  WifiMsg_t msg = {.type = APP_WIFI_CMD_SET_STA_CREDENTIALS};
   strncpy(msg.data.credentials.ssid, ssid, MAX_SSID_LEN);
   msg.data.credentials.ssid[MAX_SSID_LEN] = '\0';
   strncpy(msg.data.credentials.password, password, MAX_PASSPHRASE_LEN);
@@ -59,32 +59,32 @@ void wifi_set_sta_credentials(const char *ssid, const char *password)
 static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                                int32_t event_id, void *event_data)
 {
-  WifiMsg_t msg = {.type = WIFI_MSG_NONE};
+  WifiMsg_t msg = {.type = APP_WIFI_MSG_NONE};
 
   if (event_base == WIFI_EVENT)
   {
     switch (event_id)
     {
     case WIFI_EVENT_STA_START:
-      msg.type = WIFI_EVT_STA_START;
+      msg.type = APP_WIFI_EVT_STA_START;
       break;
     case WIFI_EVENT_STA_DISCONNECTED:
-      msg.type = WIFI_EVT_STA_DISCONNECTED;
+      msg.type = APP_WIFI_EVT_STA_DISCONNECTED;
       break;
     case WIFI_EVENT_AP_START:
-      msg.type = WIFI_EVT_AP_START;
+      msg.type = APP_WIFI_EVT_AP_START;
       break;
     case WIFI_EVENT_AP_STOP:
-      msg.type = WIFI_EVT_AP_STOP;
+      msg.type = APP_WIFI_EVT_AP_STOP;
       break;
     }
   }
   else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP)
   {
-    msg.type = WIFI_EVT_STA_GOT_IP;
+    msg.type = APP_WIFI_EVT_STA_GOT_IP;
   }
 
-  if (msg.type != WIFI_MSG_NONE)
+  if (msg.type != APP_WIFI_MSG_NONE)
   {
     wifi_post_msg(msg);
   }
@@ -155,7 +155,7 @@ static void wifi_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
 
   switch (msg->type)
   {
-  case WIFI_CMD_MODE_AP:
+  case APP_WIFI_CMD_MODE_AP:
     if (is_wifi_connected)
       esp_wifi_disconnect();
     if (is_wifi_started)
@@ -165,7 +165,7 @@ static void wifi_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
     esp_wifi_start();
     break;
 
-  case WIFI_CMD_MODE_AP_STA:
+  case APP_WIFI_CMD_MODE_AP_STA:
     if (is_wifi_connected)
       esp_wifi_disconnect();
     if (is_wifi_started)
@@ -176,7 +176,7 @@ static void wifi_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
     esp_wifi_start();
     break;
 
-  case WIFI_CMD_SET_STA_CREDENTIALS:
+  case APP_WIFI_CMD_SET_STA_CREDENTIALS:
     if (is_wifi_connected)
       esp_wifi_disconnect();
     if (is_wifi_started)
@@ -190,21 +190,21 @@ static void wifi_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
   /** @brief Ping a host to check connectivity
    *  @param host The hostname or IP address to ping
    */
-  case WIFI_CMD_PING:
+  case APP_WIFI_CMD_PING:
     ESP_LOGI(TAG_WIFI, "Would ping host: %s", msg->data.host);
     break;
 
-  case WIFI_EVT_STA_START:
+  case APP_WIFI_EVT_STA_START:
     is_wifi_started = true;
     esp_wifi_connect();
     break;
 
-  case WIFI_EVT_STA_DISCONNECTED:
+  case APP_WIFI_EVT_STA_DISCONNECTED:
     is_wifi_connected = false;
     if (++wifi_connect_retries >= 5)
     {
       esp_wifi_stop();
-      state_machine_post_event(APP_EVENT_WIFI_DISCONNECTED);
+      state_machine_post_event(APP_EVT_WIFI_DISCONNECTED, APP_WIFI);
       wifi_connect_retries = 0;
     }
     else
@@ -213,19 +213,19 @@ static void wifi_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
     }
     break;
 
-  case WIFI_EVT_AP_START:
+  case APP_WIFI_EVT_AP_START:
     is_wifi_started = true;
-    state_machine_post_event(APP_EVENT_AP_STARTED);
+    state_machine_post_event(APP_EVT_AP_STARTED, APP_WIFI);
     break;
 
-  case WIFI_EVT_AP_STOP:
+  case APP_WIFI_EVT_AP_STOP:
     is_wifi_started = false;
     break;
 
-  case WIFI_EVT_STA_GOT_IP:
+  case APP_WIFI_EVT_STA_GOT_IP:
     is_wifi_connected = true;
     wifi_connect_retries = 0;
-    state_machine_post_event(APP_EVENT_WIFI_CONNECTED);
+    state_machine_post_event(APP_EVT_WIFI_CONNECTED, APP_WIFI);
     break;
 
   default:

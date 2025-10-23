@@ -67,8 +67,7 @@ static void state_machine_enter_state(eAppState_t new_state)
       http_stop_webserver(sm_http_server);
       sm_http_server = NULL;
     }
-    // wifi_ping("airgahux2exxu-ats.iot.us-east-1.amazonaws.com");
-    mqtt_connect();
+    wifi_ping("airgahux2exxu-ats.iot.us-east-1.amazonaws.com");
     break;
   }
 }
@@ -129,6 +128,15 @@ static void state_machine_on_message(GenericTask *self, void *msg_buf, size_t ms
       ESP_LOGI(TAG, "Transition: %d -> %d", current_state, STATE_IDLE);
       current_state = STATE_IDLE;
       state_machine_enter_state(current_state);
+    }
+    else if (event == APP_EVT_PING_SUCCESS)
+    {
+      ESP_LOGI(TAG, "Received Ping Success event");
+      mqtt_connect();
+    }
+    else if (event == APP_EVT_PING_TIMEOUT)
+    {
+      ESP_LOGI(TAG, "Received Ping Timeout event");
     }
     else
     {

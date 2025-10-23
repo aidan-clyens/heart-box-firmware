@@ -22,12 +22,6 @@ extern "C"
 /** @brief Initialize and start the GPIO task */
 void gpio_task_init(void);
 
-/** @brief Post a message to the GPIO task
- *  @param msg The message to post
- *  @return pdTRUE if posted successfully, errQUEUE_FULL otherwise
- */
-BaseType_t gpio_post_msg(GpioMsg_t msg);
-
 /** @brief Change the state of the GPIO status LED
  *  @param state The state to change to
  */

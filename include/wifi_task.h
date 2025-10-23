@@ -13,12 +13,6 @@ extern "C" {
  */
 void wifi_task_init(void);
 
-/** @brief Post a message to the WiFi task
- *  @param msg The message to post
- *  @return pdTRUE if posted successfully, errQUEUE_FULL otherwise
- */
-BaseType_t wifi_post_msg(WifiMsg_t msg);
-
 /** @brief Request WiFi AP mode
  */
 void wifi_set_ap_mode(void);
@@ -28,6 +22,11 @@ void wifi_set_ap_mode(void);
  *  @param password WiFi password
  */
 void wifi_set_sta_credentials(const char *ssid, const char *password);
+
+/** @brief Send a ping command to an external host
+ *  @param hostname     IPv4 or URL for external host
+ */
+void wifi_ping(const char *hostname);
 
 #ifdef __cplusplus
 }

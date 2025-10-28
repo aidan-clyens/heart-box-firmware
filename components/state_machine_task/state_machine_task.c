@@ -3,7 +3,7 @@
 
 #include "gpio_task.h"
 #include "wifi_task.h"
-#include "http_server.h"
+#include "wifi_http_server.h"
 
 #include "esp_log.h"
 

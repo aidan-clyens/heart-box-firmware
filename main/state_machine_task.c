@@ -3,7 +3,6 @@
 
 #include "gpio_task.h"
 #include "wifi_task.h"
-#include "mqtt_task.h"
 #include "http_server.h"
 
 #include "esp_log.h"
@@ -132,7 +131,6 @@ static void state_machine_on_message(GenericTask *self, void *msg_buf, size_t ms
     else if (event == APP_EVT_PING_SUCCESS)
     {
       ESP_LOGI(TAG, "Received Ping Success event");
-      mqtt_connect();
     }
     else if (event == APP_EVT_PING_TIMEOUT)
     {

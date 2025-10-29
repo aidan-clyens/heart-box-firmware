@@ -1,12 +1,15 @@
 cmake_minimum_required(VERSION 3.16.0)
 
+set(DEVICE_NAME "Heart_Box_1")
 set(AWS_IOT_PATH "${CMAKE_CURRENT_LIST_DIR}/components/esp-aws-iot")
-set(CERTS_PATH "${CMAKE_CURRENT_LIST_DIR}/certs/HeartBox1")
+set(CERTS_PATH "${CMAKE_CURRENT_LIST_DIR}/certs/${DEVICE_NAME}")
 
 set(EXTRA_COMPONENT_DIRS
     "${AWS_IOT_PATH}/libraries"
     "${AWS_IOT_PATH}/libraries/common/"
 )
+
+add_definitions(-DDEVICE_NAME="${DEVICE_NAME}")
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 

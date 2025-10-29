@@ -24,7 +24,9 @@
 #define MQTT_KEEP_ALIVE_INTERVAL_SECONDS 60U
 #define MQTT_CONNACK_RECV_TIMEOUT_MS 5000U
 
-#define MQTT_CLIENT_IDENTIFIER "Heart_Box_1"
+#ifndef MQTT_CLIENT_IDENTIFIER
+#define MQTT_CLIENT_IDENTIFIER "Default"
+#endif // MQTT_CLIENT_IDENTIFIER
 #define MQTT_CLIENT_IDENTIFIER_LENGTH ((uint16_t)(sizeof(MQTT_CLIENT_IDENTIFIER) - 1))
 
 extern const char root_cert_auth_start[] asm("_binary_AmazonRootCA1_pem_start");
@@ -41,7 +43,10 @@ static const char *TAG_AWS_IOT = "AWS_IOT_TASK";
 static GenericTask aws_iot_task;
 
 static MQTTContext_t mqtt_context = {0};
+static MQTTConnectInfo_t connect_info = {0};
 static NetworkContext_t network_context = {0};
+
+static bool session_present = false;
 
 static uint8_t buffer[NETWORK_BUFFER_SIZE];
 
@@ -63,43 +68,13 @@ void aws_iot_connect(void)
   aws_iot_post_msg(msg);
 }
 
+/** @brief Handle the AWS IoT connect command */
 static void aws_iot_connect_cmd(void)
 {
-  ESP_LOGI(TAG_AWS_IOT, "Connecting to AWS IoT broker %s...", MQTT_BROKER_ENDPOINT);
-
-  network_context.pcHostname = MQTT_BROKER_ENDPOINT;
-  network_context.xPort = MQTT_PORT;
-  network_context.pxTls = NULL;
-  network_context.xTlsContextSemaphore = xSemaphoreCreateMutexStatic(&tls_context_semaphore);
-  network_context.disableSni = 0;
-
-  // Initialize TLS connection credentials
-  network_context.pcServerRootCA = root_cert_auth_start;
-  network_context.pcServerRootCASize = root_cert_auth_end - root_cert_auth_start;
-  network_context.pcClientCert = client_cert_start;
-  network_context.pcClientCertSize = client_cert_end - client_cert_start;
-  network_context.pcClientKey = client_key_start;
-  network_context.pcClientKeySize = client_key_end - client_key_start;
-
-  ESP_LOGI(TAG_AWS_IOT, "Using AmazonRootCA1.pem (%d bytes)",
-           (int)network_context.pcServerRootCASize);
-  ESP_LOGI(TAG_AWS_IOT, "Using device_certificate.pem.crt (%d bytes)",
-           (int)network_context.pcClientCertSize);
-  ESP_LOGI(TAG_AWS_IOT, "Using private_key.pem.key (%d bytes)",
-           (int)network_context.pcClientKeySize);
-
-  network_context.pAlpnProtos = NULL;
-
   // Establish TLS connection
   ESP_LOGI(TAG_AWS_IOT, "Establishing TLS connection to %s...", MQTT_BROKER_ENDPOINT);
-  
-  MQTTConnectInfo_t connect_info = {0};
 
-  connect_info.cleanSession = true;
-  connect_info.pClientIdentifier = MQTT_CLIENT_IDENTIFIER;
-  connect_info.clientIdentifierLength = MQTT_CLIENT_IDENTIFIER_LENGTH;
-  connect_info.keepAliveSeconds = MQTT_KEEP_ALIVE_INTERVAL_SECONDS;
-
+  connect_info.cleanSession = !session_present;
   TlsTransportStatus_t tls_status = xTlsConnect(&network_context);
 
   if (tls_status != TLS_TRANSPORT_SUCCESS)
@@ -127,7 +102,6 @@ static void aws_iot_connect_cmd(void)
   ESP_LOGI(TAG_AWS_IOT, "Establishing MQTT connection...");
 
   // Now connect MQTT over the established TLS connection
-  bool session_present = false;
   MQTTStatus_t mqtt_status = MQTT_Connect(&mqtt_context, &connect_info, NULL, MQTT_CONNACK_RECV_TIMEOUT_MS, &session_present);
 
   if (mqtt_status != MQTTSuccess)
@@ -213,6 +187,37 @@ static void aws_iot_on_init(GenericTask *self)
     ESP_LOGE(TAG_AWS_IOT, "MQTT_Init failed: Status = %s.", MQTT_Status_strerror(mqtt_status));
     return;
   }
+
+  ESP_LOGI(TAG_AWS_IOT, "MQTT initialized successfully.");
+
+  network_context.pcHostname = MQTT_BROKER_ENDPOINT;
+  network_context.xPort = MQTT_PORT;
+  network_context.pxTls = NULL;
+  network_context.xTlsContextSemaphore = xSemaphoreCreateMutexStatic(&tls_context_semaphore);
+  network_context.disableSni = 0;
+
+  // Initialize TLS connection credentials
+  network_context.pcServerRootCA = root_cert_auth_start;
+  network_context.pcServerRootCASize = root_cert_auth_end - root_cert_auth_start;
+  network_context.pcClientCert = client_cert_start;
+  network_context.pcClientCertSize = client_cert_end - client_cert_start;
+  network_context.pcClientKey = client_key_start;
+  network_context.pcClientKeySize = client_key_end - client_key_start;
+
+  ESP_LOGI(TAG_AWS_IOT, "AWS IoT TLS credentials for client %s:", MQTT_CLIENT_IDENTIFIER);
+  ESP_LOGI(TAG_AWS_IOT, "Using AmazonRootCA1.pem (%d bytes)",
+           (int)network_context.pcServerRootCASize);
+  ESP_LOGI(TAG_AWS_IOT, "Using device_certificate.pem.crt (%d bytes)",
+           (int)network_context.pcClientCertSize);
+  ESP_LOGI(TAG_AWS_IOT, "Using private_key.pem.key (%d bytes)",
+           (int)network_context.pcClientKeySize);
+
+  network_context.pAlpnProtos = NULL;
+
+  connect_info.cleanSession = true;
+  connect_info.pClientIdentifier = MQTT_CLIENT_IDENTIFIER;
+  connect_info.clientIdentifierLength = MQTT_CLIENT_IDENTIFIER_LENGTH;
+  connect_info.keepAliveSeconds = MQTT_KEEP_ALIVE_INTERVAL_SECONDS;
 
   ESP_LOGI(TAG_AWS_IOT, "AWS IoT Task initialized successfully.");
 }

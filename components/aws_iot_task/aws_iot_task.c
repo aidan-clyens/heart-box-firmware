@@ -22,6 +22,15 @@
 #define MQTT_BROKER_ENDPOINT "airgahux2exxu-ats.iot.us-east-1.amazonaws.com"
 #define MQTT_PORT 8883
 
+extern const char root_cert_auth_start[] asm("_binary_AmazonRootCA1_pem_start");
+extern const char root_cert_auth_end[] asm("_binary_AmazonRootCA1_pem_end");
+
+extern const char client_cert_start[] asm("_binary_device_certificate_pem_crt_start");
+extern const char client_cert_end[] asm("_binary_device_certificate_pem_crt_end");
+
+extern const char client_key_start[] asm("_binary_private_key_pem_key_start");
+extern const char client_key_end[] asm("_binary_private_key_pem_key_end");
+
 // --- Module State ---
 static const char *TAG_AWS_IOT = "AWS_IOT_TASK";
 static GenericTask aws_iot_task;
@@ -51,7 +60,7 @@ void aws_iot_connect(void)
 
 static void aws_iot_connect_cmd(void)
 {
-  ESP_LOGI(TAG_AWS_IOT, "Connecting to AWS IoT broker...");
+  ESP_LOGI(TAG_AWS_IOT, "Connecting to AWS IoT broker %s...", MQTT_BROKER_ENDPOINT);
 
   network_context.pcHostname = MQTT_BROKER_ENDPOINT;
   network_context.xPort = MQTT_PORT;
@@ -60,8 +69,19 @@ static void aws_iot_connect_cmd(void)
   network_context.disableSni = 0;
 
   // Initialize TLS connection
-  network_context.pcServerRootCA = NULL; // Set root CA certificate
-  network_context.pcServerRootCASize = NULL;
+  network_context.pcServerRootCA = root_cert_auth_start;
+  network_context.pcServerRootCASize = root_cert_auth_end - root_cert_auth_start;
+  network_context.pcClientCert = client_cert_start;
+  network_context.pcClientCertSize = client_cert_end - client_cert_start;
+  network_context.pcClientKey = client_key_start;
+  network_context.pcClientKeySize = client_key_end - client_key_start;
+
+  ESP_LOGI(TAG_AWS_IOT, "Connecting using AmazonRootCA1.pem (%d bytes)",
+           (int)network_context.pcServerRootCASize);
+  ESP_LOGI(TAG_AWS_IOT, "Connecting using device_certificate.pem.crt (%d bytes)",
+           (int)network_context.pcClientCertSize);
+  ESP_LOGI(TAG_AWS_IOT, "Connecting using private_key.pem.key (%d bytes)",
+           (int)network_context.pcClientKeySize);
 }
 
 static void aws_iot_event_callback(MQTTContext_t * p_mqtt_context,

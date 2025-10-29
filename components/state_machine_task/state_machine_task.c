@@ -4,6 +4,7 @@
 #include "gpio_task.h"
 #include "wifi_task.h"
 #include "wifi_http_server.h"
+#include "aws_iot_task.h"
 
 #include "esp_log.h"
 
@@ -19,7 +20,7 @@ typedef enum
   STATE_CONNECTED,
 } eAppState_t;
 
-static const char *TAG = "SM";
+static const char *TAG = "STATE_MACHINE_TASK";
 
 static GenericTask sm_task;
 static httpd_handle_t sm_http_server = NULL;
@@ -66,7 +67,8 @@ static void state_machine_enter_state(eAppState_t new_state)
       http_stop_webserver(sm_http_server);
       sm_http_server = NULL;
     }
-    wifi_ping("airgahux2exxu-ats.iot.us-east-1.amazonaws.com");
+    // wifi_ping("airgahux2exxu-ats.iot.us-east-1.amazonaws.com");
+    aws_iot_connect();
     break;
   }
 }

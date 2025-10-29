@@ -21,6 +21,11 @@
 #define NETWORK_BUFFER_SIZE 2048
 #define MQTT_BROKER_ENDPOINT "airgahux2exxu-ats.iot.us-east-1.amazonaws.com"
 #define MQTT_PORT 8883
+#define MQTT_KEEP_ALIVE_INTERVAL_SECONDS 60U
+#define MQTT_CONNACK_RECV_TIMEOUT_MS 5000U
+
+#define MQTT_CLIENT_IDENTIFIER "Heart_Box_1"
+#define MQTT_CLIENT_IDENTIFIER_LENGTH ((uint16_t)(sizeof(MQTT_CLIENT_IDENTIFIER) - 1))
 
 extern const char root_cert_auth_start[] asm("_binary_AmazonRootCA1_pem_start");
 extern const char root_cert_auth_end[] asm("_binary_AmazonRootCA1_pem_end");
@@ -68,7 +73,7 @@ static void aws_iot_connect_cmd(void)
   network_context.xTlsContextSemaphore = xSemaphoreCreateMutexStatic(&tls_context_semaphore);
   network_context.disableSni = 0;
 
-  // Initialize TLS connection
+  // Initialize TLS connection credentials
   network_context.pcServerRootCA = root_cert_auth_start;
   network_context.pcServerRootCASize = root_cert_auth_end - root_cert_auth_start;
   network_context.pcClientCert = client_cert_start;
@@ -76,12 +81,62 @@ static void aws_iot_connect_cmd(void)
   network_context.pcClientKey = client_key_start;
   network_context.pcClientKeySize = client_key_end - client_key_start;
 
-  ESP_LOGI(TAG_AWS_IOT, "Connecting using AmazonRootCA1.pem (%d bytes)",
+  ESP_LOGI(TAG_AWS_IOT, "Using AmazonRootCA1.pem (%d bytes)",
            (int)network_context.pcServerRootCASize);
-  ESP_LOGI(TAG_AWS_IOT, "Connecting using device_certificate.pem.crt (%d bytes)",
+  ESP_LOGI(TAG_AWS_IOT, "Using device_certificate.pem.crt (%d bytes)",
            (int)network_context.pcClientCertSize);
-  ESP_LOGI(TAG_AWS_IOT, "Connecting using private_key.pem.key (%d bytes)",
+  ESP_LOGI(TAG_AWS_IOT, "Using private_key.pem.key (%d bytes)",
            (int)network_context.pcClientKeySize);
+
+  network_context.pAlpnProtos = NULL;
+
+  // Establish TLS connection
+  ESP_LOGI(TAG_AWS_IOT, "Establishing TLS connection to %s...", MQTT_BROKER_ENDPOINT);
+  
+  MQTTConnectInfo_t connect_info = {0};
+
+  connect_info.cleanSession = true;
+  connect_info.pClientIdentifier = MQTT_CLIENT_IDENTIFIER;
+  connect_info.clientIdentifierLength = MQTT_CLIENT_IDENTIFIER_LENGTH;
+  connect_info.keepAliveSeconds = MQTT_KEEP_ALIVE_INTERVAL_SECONDS;
+
+  TlsTransportStatus_t tls_status = xTlsConnect(&network_context);
+
+  if (tls_status != TLS_TRANSPORT_SUCCESS)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "TLS connection failed: Status = %d.", tls_status);
+    
+    switch(tls_status) {
+      case TLS_TRANSPORT_INVALID_CREDENTIALS:
+        ESP_LOGE(TAG_AWS_IOT, "Invalid credentials - check certificate/key");
+        break;
+      case TLS_TRANSPORT_HANDSHAKE_FAILED:
+        ESP_LOGE(TAG_AWS_IOT, "TLS handshake failed - check CA cert and endpoint");
+        break;
+      case TLS_TRANSPORT_CONNECT_FAILURE:
+        ESP_LOGE(TAG_AWS_IOT, "Connection failure - check network and endpoint");
+        break;
+      default:
+        ESP_LOGE(TAG_AWS_IOT, "Unknown TLS error");
+        break;
+    }
+    return;
+  }
+
+  ESP_LOGI(TAG_AWS_IOT, "TLS connection established successfully.");
+  ESP_LOGI(TAG_AWS_IOT, "Establishing MQTT connection...");
+
+  // Now connect MQTT over the established TLS connection
+  bool session_present = false;
+  MQTTStatus_t mqtt_status = MQTT_Connect(&mqtt_context, &connect_info, NULL, MQTT_CONNACK_RECV_TIMEOUT_MS, &session_present);
+
+  if (mqtt_status != MQTTSuccess)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "MQTT_Connect failed: Status = %s.", MQTT_Status_strerror(mqtt_status));
+    return;
+  }
+
+  ESP_LOGI(TAG_AWS_IOT, "Connected to AWS IoT broker %s successfully.", MQTT_BROKER_ENDPOINT);
 }
 
 static void aws_iot_event_callback(MQTTContext_t * p_mqtt_context,

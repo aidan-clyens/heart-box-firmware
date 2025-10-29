@@ -4,6 +4,7 @@ set(AWS_IOT_PATH "components/esp-aws-iot")
 
 set(EXTRA_COMPONENT_DIRS
     "${AWS_IOT_PATH}/libraries"
+    "${AWS_IOT_PATH}/libraries/common/"
 )
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)

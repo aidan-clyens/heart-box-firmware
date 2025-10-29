@@ -7,8 +7,7 @@
 #include "state_machine_task.h"
 #include "gpio_task.h"
 #include "wifi_task.h"
-
-#include <stdio.h>
+#include "aws_iot_task.h"
 
 /** @brief Initialize Non-Volatile Storage (NVS)
  */
@@ -34,5 +33,6 @@ void app_main()
   // Create tasks
   wifi_task_init();
   gpio_task_init();
+  aws_iot_task_init();
   state_machine_task_init();
 }

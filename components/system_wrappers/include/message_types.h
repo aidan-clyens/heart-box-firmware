@@ -38,14 +38,14 @@ typedef enum
   APP_EVT_BUTTON_PRESSED,
   APP_GPIO_EVT_BUTTON_PRESSED, /**< Event: button pressed */
 
-  // -- MQTT Commands -- //
-  APP_MQTT_CMD_CONNECT,
-  APP_MQTT_CMD_DISCONNECT,
+  // -- AWS IoT Commands -- //
+  APP_AWS_IOT_CMD_CONNECT,
+  APP_AWS_IOT_CMD_DISCONNECT,
 
-  // -- MQTT Events -- //
-  APP_MQTT_EVT_CONNECTED,
-  APP_MQTT_EVT_DISCONNECTED,
-  APP_MQTT_EVT_ERROR,
+  // -- AWS IoT Events -- //
+  APP_AWS_IOT_EVT_CONNECTED,
+  APP_AWS_IOT_EVT_DISCONNECTED,
+  APP_AWS_IOT_EVT_ERROR,
 
   APP_MSG_NONE = -1 /**< Generic "no message" marker */
 } eAppMsgType_t;
@@ -103,17 +103,17 @@ typedef struct
   } data;
 } GpioMsg_t;
 
-/** @struct MqttMsg_t
- *  @brief Command or event message for the MQTT task
+/** @struct AwsIotMsg_t
+ *  @brief  Message structure for AWS IoT task messages
  */
 typedef struct
 {
   eAppMsgType_t type;
   union
   {
-    int error_code;
+    int placeholder; // Placeholder for actual message data
   } data;
-} MqttMsg_t;
+} AwsIotMsg_t;
 
 /** @struct AppMsg_t
  *  @brief Generic wrapper for system-wide messages
@@ -126,7 +126,7 @@ typedef struct
   {
     WifiMsg_t wifi;
     GpioMsg_t gpio;
-    MqttMsg_t mqtt;
+    AwsIotMsg_t aws_iot;
   } data;
 } AppMsg_t;
 

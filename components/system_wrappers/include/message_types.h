@@ -41,6 +41,7 @@ typedef enum
   // -- AWS IoT Commands -- //
   APP_AWS_IOT_CMD_CONNECT,
   APP_AWS_IOT_CMD_DISCONNECT,
+  APP_AWS_IOT_CMD_START_LISTENING,
 
   // -- AWS IoT Events -- //
   APP_AWS_IOT_EVT_CONNECTED,

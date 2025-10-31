@@ -12,6 +12,9 @@ void aws_iot_task_init(void);
 /** @brief Request a connection to the configured AWS IoT broker */
 void aws_iot_connect(void);
 
+/** @brief Start listening for incoming MQTT messages from AWS IoT */
+void aws_iot_start_listening(void);
+
 #ifdef __cplusplus
 }
 #endif

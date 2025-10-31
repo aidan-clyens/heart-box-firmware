@@ -19,26 +19,33 @@
 #include "message_types.h"
 #include "state_machine_task.h"
 
-#define NETWORK_BUFFER_SIZE 2048
-#define MQTT_BROKER_ENDPOINT "airgahux2exxu-ats.iot.us-east-1.amazonaws.com"
-#define MQTT_PORT 8883
-#define MQTT_KEEP_ALIVE_INTERVAL_SECONDS 60U
-#define MQTT_KEEP_ALIVE_TIMER_INTERVAL_MS 5000U
-#define MQTT_CONNACK_RECV_TIMEOUT_MS 5000U
-#define MQTT_PROCESS_LOOP_TIMEOUT_MS 5000U
+// User definitions
+#ifndef MQTT_BROKER_ENDPOINT
+#define MQTT_BROKER_ENDPOINT ""
+#endif // MQTT_BROKER_ENDPOINT
 
 #ifndef MQTT_CLIENT_IDENTIFIER
 #define MQTT_CLIENT_IDENTIFIER "Default"
 #endif // MQTT_CLIENT_IDENTIFIER
 #define MQTT_CLIENT_IDENTIFIER_LENGTH ((uint16_t)(sizeof(MQTT_CLIENT_IDENTIFIER) - 1))
 
-#define MQTT_OUTGOING_PUBLISH_RECORD_LEN 10U
-#define MQTT_INCOMING_PUBLISH_RECORD_LEN 10U
-
 #ifndef MQTT_TOPIC
 #define MQTT_TOPIC "Default"
 #endif // MQTT_TOPIC
 #define MQTT_TOPIC_LENGTH ((uint16_t)(sizeof(MQTT_TOPIC) - 1))
+
+#define MQTT_PORT 8883
+
+// Time definitions
+#define MQTT_KEEP_ALIVE_INTERVAL_S 60U
+#define MQTT_KEEP_ALIVE_TIMER_INTERVAL_MS 500U
+#define MQTT_CONNACK_RECV_TIMEOUT_MS 5000U
+#define MQTT_PROCESS_LOOP_TIMEOUT_MS 5000U
+
+#define MQTT_OUTGOING_PUBLISH_RECORD_LEN 20U
+#define MQTT_INCOMING_PUBLISH_RECORD_LEN 20U
+
+#define MQTT_NETWORK_BUFFER_SIZE 2048
 
 #define MQTT_SUBACK_RECEIVED_BIT (1 << 0)
 #define MQTT_SUBACK_SUCCESS_BIT (1 << 1)
@@ -57,24 +64,25 @@ static const char *TAG_AWS_IOT = "AWS_IOT_TASK";
 static const char *TAG_AWS_IOT_KEEP_ALIVE = "AWS_IOT_KEEP_ALIVE_TASK";
 static GenericTask aws_iot_task;
 
+// MQTT connection
 static MQTTContext_t mqtt_context = {0};
 static MQTTConnectInfo_t connect_info = {0};
-static NetworkContext_t network_context = {0};
 
+// Network
+static NetworkContext_t network_context = {0};
+static uint8_t buffer[MQTT_NETWORK_BUFFER_SIZE];
+static StaticSemaphore_t tls_context_semaphore;
+
+// MQTT subscriptions
 static MQTTSubscribeInfo_t subscription_list[1];
 static unsigned short subscribe_packet_identifier = 0U;
 
-static bool subscribed = false;
-
+// MQTT message queues
 static MQTTPubAckInfo_t outgoing_publish_records[MQTT_OUTGOING_PUBLISH_RECORD_LEN];
 static MQTTPubAckInfo_t incoming_publish_records[MQTT_INCOMING_PUBLISH_RECORD_LEN];
 
+// Events handling
 static bool session_present = false;
-
-static uint8_t buffer[NETWORK_BUFFER_SIZE];
-
-static StaticSemaphore_t tls_context_semaphore;
-
 static EventGroupHandle_t mqtt_event_group = NULL;
 
 /** @brief Post a command message to the AWS IoT task
@@ -91,6 +99,40 @@ void aws_iot_connect(void)
   AwsIotMsg_t msg;
   msg.type = APP_AWS_IOT_CMD_CONNECT;
   aws_iot_post_msg(msg);
+}
+
+/** @brief Public API: Start listening for incoming MQTT messages from AWS IoT */
+void aws_iot_start_listening(void)
+{
+  AwsIotMsg_t msg;
+  msg.type = APP_AWS_IOT_CMD_START_LISTENING;
+  aws_iot_post_msg(msg);
+}
+
+/** @brief AWS IoT Keep Alive Task */
+static void aws_iot_keep_alive_task()
+{
+  ESP_LOGI(TAG_AWS_IOT_KEEP_ALIVE, "AWS IoT Keep Alive Task started.");
+
+  while (true)
+  {
+    MQTTStatus_t mqtt_status = MQTT_ProcessLoop(&mqtt_context);
+
+    if (mqtt_status != MQTTSuccess && mqtt_status != MQTTNeedMoreBytes)
+    {
+      ESP_LOGE(TAG_AWS_IOT, "MQTT_ProcessLoop failed in Keep Alive task: %s",
+               MQTT_Status_strerror(mqtt_status));
+
+      // Handle disconnection
+      MQTT_Disconnect(&mqtt_context);
+      xTlsDisconnect(&network_context);
+
+      state_machine_post_event(APP_AWS_IOT_EVT_DISCONNECTED, APP_MQTT);
+      vTaskDelete(NULL);
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(MQTT_KEEP_ALIVE_TIMER_INTERVAL_MS));
+  }
 }
 
 /** @brief Establish a TLS connection and MQTT session with AWS IoT broker */
@@ -243,6 +285,13 @@ static void aws_iot_connect_cmd(void)
   ESP_LOGI(TAG_AWS_IOT, "Connected to AWS IoT %s successfully.", MQTT_BROKER_ENDPOINT);
 }
 
+/** @brief Handle the AWS IoT start listening command */
+static void aws_iot_start_listening_cmd()
+{
+  // Start Keep Alive task
+  xTaskCreate(aws_iot_keep_alive_task, TAG_AWS_IOT_KEEP_ALIVE, 4096, NULL, 5, NULL);
+}
+
 /** @brief Handle incoming SUBACK packet
  *  @param p_packet_info Pointer to the MQTT packet info
  */
@@ -342,7 +391,7 @@ static void aws_iot_on_init(GenericTask *self)
   transport.writev = NULL;
 
   network_buffer.pBuffer = buffer;
-  network_buffer.size = NETWORK_BUFFER_SIZE;
+  network_buffer.size = MQTT_NETWORK_BUFFER_SIZE;
 
   mqtt_event_group = xEventGroupCreate();
   if (mqtt_event_group == NULL)
@@ -418,7 +467,7 @@ static void aws_iot_on_init(GenericTask *self)
   connect_info.cleanSession = true;
   connect_info.pClientIdentifier = MQTT_CLIENT_IDENTIFIER;
   connect_info.clientIdentifierLength = MQTT_CLIENT_IDENTIFIER_LENGTH;
-  connect_info.keepAliveSeconds = MQTT_KEEP_ALIVE_INTERVAL_SECONDS;
+  connect_info.keepAliveSeconds = MQTT_KEEP_ALIVE_INTERVAL_S;
 
   ESP_LOGI(TAG_AWS_IOT, "AWS IoT Task initialized successfully.");
 }
@@ -442,6 +491,9 @@ static void aws_iot_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
   {
     case APP_AWS_IOT_CMD_CONNECT:
       aws_iot_connect_cmd();
+      break;
+    case APP_AWS_IOT_CMD_START_LISTENING:
+      aws_iot_start_listening_cmd();
       break;
     default:
       break;

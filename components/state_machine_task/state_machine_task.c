@@ -35,6 +35,8 @@ static void state_machine_enter_state(eAppState_t new_state)
   switch (new_state)
   {
   case STATE_IDLE:
+    gpio_set_state(GPIO_STATE_LED_OFF);
+
     if (sm_http_server)
     {
       http_stop_webserver(sm_http_server);
@@ -72,6 +74,9 @@ static void state_machine_enter_state(eAppState_t new_state)
 
   case STATE_AWS_IOT_CONNECTED:
     gpio_set_state(GPIO_STATE_LED_SOLID);
+    // Start AWS IoT Keep Alive task to listen for incoming messages
+    aws_iot_start_listening();
+
     break;
   }
 }

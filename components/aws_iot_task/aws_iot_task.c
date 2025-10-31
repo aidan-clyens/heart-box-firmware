@@ -17,12 +17,15 @@
 
 #include "generic_task.h"
 #include "message_types.h"
+#include "state_machine_task.h"
 
 #define NETWORK_BUFFER_SIZE 2048
 #define MQTT_BROKER_ENDPOINT "airgahux2exxu-ats.iot.us-east-1.amazonaws.com"
 #define MQTT_PORT 8883
 #define MQTT_KEEP_ALIVE_INTERVAL_SECONDS 60U
+#define MQTT_KEEP_ALIVE_TIMER_INTERVAL_MS 5000U
 #define MQTT_CONNACK_RECV_TIMEOUT_MS 5000U
+#define MQTT_PROCESS_LOOP_TIMEOUT_MS 5000U
 
 #ifndef MQTT_CLIENT_IDENTIFIER
 #define MQTT_CLIENT_IDENTIFIER "Default"
@@ -37,6 +40,9 @@
 #endif // MQTT_TOPIC
 #define MQTT_TOPIC_LENGTH ((uint16_t)(sizeof(MQTT_TOPIC) - 1))
 
+#define MQTT_SUBACK_RECEIVED_BIT (1 << 0)
+#define MQTT_SUBACK_SUCCESS_BIT (1 << 1)
+
 extern const char root_cert_auth_start[] asm("_binary_AmazonRootCA1_pem_start");
 extern const char root_cert_auth_end[] asm("_binary_AmazonRootCA1_pem_end");
 
@@ -48,14 +54,17 @@ extern const char client_key_end[] asm("_binary_private_key_pem_key_end");
 
 // --- Module State ---
 static const char *TAG_AWS_IOT = "AWS_IOT_TASK";
+static const char *TAG_AWS_IOT_KEEP_ALIVE = "AWS_IOT_KEEP_ALIVE_TASK";
 static GenericTask aws_iot_task;
 
 static MQTTContext_t mqtt_context = {0};
 static MQTTConnectInfo_t connect_info = {0};
 static NetworkContext_t network_context = {0};
 
-static MQTTSubscribeInfo_t global_subscription_list[1];
-static unsigned short global_subscribe_packet_identifier = 0U;
+static MQTTSubscribeInfo_t subscription_list[1];
+static unsigned short subscribe_packet_identifier = 0U;
+
+static bool subscribed = false;
 
 static MQTTPubAckInfo_t outgoing_publish_records[MQTT_OUTGOING_PUBLISH_RECORD_LEN];
 static MQTTPubAckInfo_t incoming_publish_records[MQTT_INCOMING_PUBLISH_RECORD_LEN];
@@ -65,6 +74,8 @@ static bool session_present = false;
 static uint8_t buffer[NETWORK_BUFFER_SIZE];
 
 static StaticSemaphore_t tls_context_semaphore;
+
+static EventGroupHandle_t mqtt_event_group = NULL;
 
 /** @brief Post a command message to the AWS IoT task
  *  @param msg The message to post
@@ -85,9 +96,13 @@ void aws_iot_connect(void)
 /** @brief Establish a TLS connection and MQTT session with AWS IoT broker */
 static MQTTStatus_t aws_iot_establish_mqtt_connection(void)
 {
+  MQTTStatus_t mqtt_status;
   ESP_LOGI(TAG_AWS_IOT, "Establishing TLS connection to %s...", MQTT_BROKER_ENDPOINT);
 
+  xSemaphoreTake(network_context.xTlsContextSemaphore, portMAX_DELAY);
   connect_info.cleanSession = !session_present;
+  xSemaphoreGive(network_context.xTlsContextSemaphore);
+
   TlsTransportStatus_t tls_status = xTlsConnect(&network_context);
 
   if (tls_status != TLS_TRANSPORT_SUCCESS)
@@ -116,30 +131,89 @@ static MQTTStatus_t aws_iot_establish_mqtt_connection(void)
   ESP_LOGI(TAG_AWS_IOT, "Establishing MQTT connection...");
 
   // Now connect MQTT over the established TLS connection
-  return MQTT_Connect(&mqtt_context, &connect_info, NULL, MQTT_CONNACK_RECV_TIMEOUT_MS, &session_present);
+  mqtt_status = MQTT_Connect(&mqtt_context, &connect_info, NULL, MQTT_CONNACK_RECV_TIMEOUT_MS, &session_present);
+  if (mqtt_status != MQTTSuccess)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "MQTT connection failed: Status = %s.", MQTT_Status_strerror(mqtt_status));
+    xTlsDisconnect(&network_context);
+    return mqtt_status;
+  }
+
+  ESP_LOGI(TAG_AWS_IOT, "MQTT connection established successfully. Session Present: %s", session_present ? "true" : "false");
+  return mqtt_status;
 }
 
 /** @brief Subscribe to the configured AWS IoT topic */
 static MQTTStatus_t aws_iot_subscribe_to_topic()
 {
+  MQTTStatus_t mqtt_status;
   ESP_LOGI(TAG_AWS_IOT, "Subscribing to topic %s...", MQTT_TOPIC);
 
-  (void)memset((void *)global_subscription_list, 0x00, sizeof(global_subscription_list));
+  (void)memset((void *)subscription_list, 0x00, sizeof(subscription_list));
 
   // Subscribe to one topic
-  global_subscription_list[0].qos = MQTTQoS1;
-  global_subscription_list[0].pTopicFilter = MQTT_TOPIC;
-  global_subscription_list[0].topicFilterLength = MQTT_TOPIC_LENGTH;
+  subscription_list[0].qos = MQTTQoS1;
+  subscription_list[0].pTopicFilter = MQTT_TOPIC;
+  subscription_list[0].topicFilterLength = MQTT_TOPIC_LENGTH;
 
   // Generate a unique packet identifier for the SUBSCRIBE packet
-  global_subscribe_packet_identifier = MQTT_GetPacketId(&mqtt_context);
+  subscribe_packet_identifier = MQTT_GetPacketId(&mqtt_context);
 
-  ESP_LOGI(TAG_AWS_IOT, "Sending SUBSCRIBE packet with ID %u", global_subscribe_packet_identifier);
+  ESP_LOGI(TAG_AWS_IOT, "Sending SUBSCRIBE packet with ID %u", subscribe_packet_identifier);
 
-  return MQTT_Subscribe(&mqtt_context,
-                        global_subscription_list,
-                        sizeof(global_subscription_list) / sizeof(MQTTSubscribeInfo_t),
-                        global_subscribe_packet_identifier);
+  mqtt_status = MQTT_Subscribe(&mqtt_context,
+                                subscription_list,
+                                sizeof(subscription_list) / sizeof(MQTTSubscribeInfo_t),
+                                subscribe_packet_identifier);
+
+  if (mqtt_status != MQTTSuccess)
+  {
+    return mqtt_status;
+  }
+
+  // Wait for SUBACK and verify subscription
+  const TickType_t start_time = xTaskGetTickCount();
+  const TickType_t timeout_ticks = pdMS_TO_TICKS(MQTT_PROCESS_LOOP_TIMEOUT_MS);
+  EventBits_t bits = 0;
+
+  while ((xTaskGetTickCount() - start_time) < timeout_ticks)
+  {
+    // Check if event has already been set
+    bits = xEventGroupGetBits(mqtt_event_group);
+    if (bits & MQTT_SUBACK_RECEIVED_BIT)
+    {
+      break;
+    }
+
+    // Process MQTT events to receive SUBACK
+    mqtt_status = MQTT_ProcessLoop(&mqtt_context);
+
+    if (mqtt_status != MQTTSuccess && mqtt_status != MQTTNeedMoreBytes)
+    {
+      ESP_LOGE(TAG_AWS_IOT, "MQTT_ProcessLoop failed while waiting for SUBACK: %s",
+               MQTT_Status_strerror(mqtt_status));
+      return mqtt_status;
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(100));
+  }
+
+  xEventGroupClearBits(mqtt_event_group, MQTT_SUBACK_RECEIVED_BIT | MQTT_SUBACK_SUCCESS_BIT);
+
+  if (!(bits & MQTT_SUBACK_RECEIVED_BIT))
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Timeout waiting for SUBACK");
+    return MQTTRecvFailed;
+  }
+
+  if (!(bits & MQTT_SUBACK_SUCCESS_BIT))
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Subscription rejected by broker");
+    return MQTTServerRefused;
+  }
+
+  ESP_LOGI(TAG_AWS_IOT, "Subscribed to topic %s successfully.", MQTT_TOPIC);
+  return mqtt_status;
 }
 
 /** @brief Handle the AWS IoT connect command */
@@ -149,57 +223,100 @@ static void aws_iot_connect_cmd(void)
   if (mqtt_status != MQTTSuccess)
   {
     ESP_LOGE(TAG_AWS_IOT, "Failed to establish TLS/MQTT session to AWS IoT broker %s: %s", MQTT_BROKER_ENDPOINT, MQTT_Status_strerror(mqtt_status));
+    state_machine_post_event(APP_AWS_IOT_EVT_DISCONNECTED, APP_MQTT);
     return;
   }
-  ESP_LOGI(TAG_AWS_IOT, "TLS/MQTT session established to AWS IoT broker %s successfully.", MQTT_BROKER_ENDPOINT);
 
   mqtt_status = aws_iot_subscribe_to_topic();
   if (mqtt_status != MQTTSuccess)
   {
     ESP_LOGE(TAG_AWS_IOT, "Failed to subscribe to AWS IoT topic %s: %s", MQTT_TOPIC, MQTT_Status_strerror(mqtt_status));
+
+    MQTT_Disconnect(&mqtt_context);
+    xTlsDisconnect(&network_context);
+
+    state_machine_post_event(APP_AWS_IOT_EVT_DISCONNECTED, APP_MQTT);
     return;
   }
-  ESP_LOGI(TAG_AWS_IOT, "Subscribed to AWS IoT topic %s successfully.", MQTT_TOPIC);
 
+  state_machine_post_event(APP_AWS_IOT_EVT_CONNECTED, APP_MQTT);
   ESP_LOGI(TAG_AWS_IOT, "Connected to AWS IoT %s successfully.", MQTT_BROKER_ENDPOINT);
 }
 
+/** @brief Handle incoming SUBACK packet
+ *  @param p_packet_info Pointer to the MQTT packet info
+ */
+static void aws_iot_handle_suback_packet(MQTTPacketInfo_t * p_packet_info)
+{
+  uint8_t *payload = NULL;
+  size_t payload_size = 0;
+
+  MQTTStatus_t mqtt_status = MQTT_GetSubAckStatusCodes(p_packet_info, &payload, &payload_size);
+  if (mqtt_status != MQTTSuccess)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Failed to get SUBACK status codes: %s", MQTT_Status_strerror(mqtt_status));
+    return;
+  }
+
+  // Publish SUBACK status
+  ESP_LOGI(TAG_AWS_IOT, "SUBACK Status Code: %u", payload[0]);
+
+  if (payload[0] != MQTTSubAckFailure)
+  {
+    ESP_LOGI(TAG_AWS_IOT, "Subscription to topic %s successful.", MQTT_TOPIC);
+    xEventGroupSetBits(mqtt_event_group, MQTT_SUBACK_RECEIVED_BIT | MQTT_SUBACK_SUCCESS_BIT);
+  }
+  else
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Subscription failed with status code: %u", payload[0]);
+    xEventGroupSetBits(mqtt_event_group, MQTT_SUBACK_RECEIVED_BIT);
+  }
+}
+
+/** @brief AWS IoT MQTT Event Callback
+ *  @param p_mqtt_context Pointer to the MQTT context
+ *  @param p_packet_info Pointer to the MQTT packet info
+ *  @param p_deserialized_info Pointer to the MQTT deserialized info
+ */
 static void aws_iot_event_callback(MQTTContext_t * p_mqtt_context,
                                    MQTTPacketInfo_t * p_packet_info,
                                    MQTTDeserializedInfo_t * p_deserialized_info)
 {
   uint16_t packet_id = p_deserialized_info->packetIdentifier;
+  ESP_LOGI(TAG_AWS_IOT, "AWS IoT MQTT Event Callback: Packet Type=%02X, Packet ID=%u",
+           p_packet_info->type,
+           packet_id);
 
   if ((p_packet_info->type & 0xF0U) == MQTT_PACKET_TYPE_PUBLISH)
   {
     // TODO - Handle incoming publish
+    ESP_LOGI(TAG_AWS_IOT, "Received MQTT PUBLISH packet (Packet ID: %u)", packet_id);
   }
   else
   {
     switch (p_packet_info->type)
     {
       case MQTT_PACKET_TYPE_SUBACK:
-        ESP_LOGI(TAG_AWS_IOT, "Received SUBACK MQTT packet");
-        // TODO - Handle SUBACK
+        ESP_LOGI(TAG_AWS_IOT, "Received MQTT SUBACK packet (Packet ID: %u)", packet_id);
+        aws_iot_handle_suback_packet(p_packet_info);
         break;
-
       case MQTT_PACKET_TYPE_UNSUBACK:
-        ESP_LOGI(TAG_AWS_IOT, "Received UNSUBACK MQTT packet");
+        ESP_LOGI(TAG_AWS_IOT, "Received MQTT UNSUBACK packet (Packet ID: %u)", packet_id);
         // TODO - Handle UNSUBACK
         break;
 
       case MQTT_PACKET_TYPE_PUBACK:
-        ESP_LOGI(TAG_AWS_IOT, "Received PUBACK MQTT packet");
+        ESP_LOGI(TAG_AWS_IOT, "Received MQTT PUBACK packet (Packet ID: %u)", packet_id);
         // TODO - Handle PUBACK
         break;
 
       case MQTT_PACKET_TYPE_PINGRESP:
-        ESP_LOGI(TAG_AWS_IOT, "Received PINGRESP MQTT packet");
+        ESP_LOGI(TAG_AWS_IOT, "Received MQTT PINGRESP packet (Packet ID: %u)", packet_id);
         // TODO - Handle PINGRESP
         break;
 
       case MQTT_PACKET_TYPE_CONNACK:
-        ESP_LOGI(TAG_AWS_IOT, "Received CONNACK MQTT packet");
+        ESP_LOGI(TAG_AWS_IOT, "Received MQTT CONNACK packet (Packet ID: %u)", packet_id);
         // TODO - Handle CONNACK
         break;
 
@@ -226,6 +343,13 @@ static void aws_iot_on_init(GenericTask *self)
 
   network_buffer.pBuffer = buffer;
   network_buffer.size = NETWORK_BUFFER_SIZE;
+
+  mqtt_event_group = xEventGroupCreate();
+  if (mqtt_event_group == NULL)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Failed to create MQTT event group");
+    return;
+  }
 
   mqtt_status = MQTT_Init(&mqtt_context,
                           &transport,
@@ -259,6 +383,12 @@ static void aws_iot_on_init(GenericTask *self)
   network_context.xTlsContextSemaphore = xSemaphoreCreateMutexStatic(&tls_context_semaphore);
   network_context.disableSni = 0;
 
+  if (network_context.xTlsContextSemaphore == NULL)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Failed to create TLS context semaphore.");
+    return;
+  }
+  
   // Initialize TLS connection credentials
   network_context.pcServerRootCA = root_cert_auth_start;
   network_context.pcServerRootCASize = root_cert_auth_end - root_cert_auth_start;
@@ -266,6 +396,14 @@ static void aws_iot_on_init(GenericTask *self)
   network_context.pcClientCertSize = client_cert_end - client_cert_start;
   network_context.pcClientKey = client_key_start;
   network_context.pcClientKeySize = client_key_end - client_key_start;
+
+  if (network_context.pcServerRootCA == NULL || network_context.pcServerRootCASize <= 0 ||
+      network_context.pcClientCert == NULL || network_context.pcClientCertSize <= 0 ||
+      network_context.pcClientKey == NULL || network_context.pcClientKeySize <= 0)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "TLS credentials are not properly configured.");
+    return;
+  }
 
   ESP_LOGI(TAG_AWS_IOT, "AWS IoT TLS credentials for client %s:", MQTT_CLIENT_IDENTIFIER);
   ESP_LOGI(TAG_AWS_IOT, "Using AmazonRootCA1.pem (%d bytes)",

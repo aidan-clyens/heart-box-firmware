@@ -138,6 +138,14 @@ static void state_machine_on_message(GenericTask *self, void *msg_buf, size_t ms
     {
       ESP_LOGI(TAG, "Received Ping Timeout event");
     }
+    else if (event == APP_AWS_IOT_EVT_CONNECTED)
+    {
+      ESP_LOGI(TAG, "Received AWS IoT Connected event");
+    }
+    else if (event == APP_AWS_IOT_EVT_DISCONNECTED)
+    {
+      ESP_LOGI(TAG, "Received AWS IoT Disconnected event");
+    }
     else
     {
       ESP_LOGW(TAG, "Unexpected event %d in STATE_CONNECTED", event);

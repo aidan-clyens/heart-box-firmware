@@ -118,7 +118,7 @@ void aws_iot_publish_button_event(void)
 }
 
 /** @brief AWS IoT Keep Alive Task */
-static void aws_iot_keep_alive_task(void)
+static void aws_iot_keep_alive_task()
 {
   ESP_LOGI(TAG_AWS_IOT_KEEP_ALIVE, "AWS IoT Keep Alive Task started.");
 
@@ -303,7 +303,34 @@ static void aws_iot_start_listening_cmd()
 /** @brief Handle the AWS IoT publish button event command */
 static void aws_iot_publish_button_event_cmd()
 {
-  // TODO - Implement publishing button event to AWS IoT
+  // Check if MQTT is connected
+  if (mqtt_context.connectStatus != MQTTConnected)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Cannot publish button event: MQTT not connected");
+    return;
+  }
+
+  // Prepare the MQTT PUBLISH message
+  MQTTPublishInfo_t publish_info = {0};
+  const char *payload = "{\"button\":\"pressed\"}";
+
+  // Get a unique packet identifier for the PUBLISH packet
+  uint16_t packet_id = MQTT_GetPacketId(&mqtt_context);
+
+  publish_info.qos = MQTTQoS1;
+  publish_info.pTopicName = MQTT_TOPIC;
+  publish_info.topicNameLength = MQTT_TOPIC_LENGTH;
+  publish_info.pPayload = (const void *)payload;
+  publish_info.payloadLength = strlen(payload);
+  
+  MQTTStatus_t mqtt_status = MQTT_Publish(&mqtt_context, &publish_info, packet_id);
+  if (mqtt_status != MQTTSuccess)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Failed to publish button event: %s", MQTT_Status_strerror(mqtt_status));
+    return;
+  }
+
+  ESP_LOGI(TAG_AWS_IOT, "Published button event to topic %s with Packet ID %u", MQTT_TOPIC, packet_id);
 }
 
 /** @brief Handle incoming PUBLISH packet

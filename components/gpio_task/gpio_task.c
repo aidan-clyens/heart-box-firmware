@@ -8,6 +8,8 @@
 
 #include "state_machine_task.h"
 
+#define DEBUG
+
 static const char *TAG_GPIO = "GPIO_TASK";
 
 static GenericTask gpio_task;
@@ -98,6 +100,12 @@ static void gpio_button_task(void *args)
 
   while (true)
   {
+#ifdef DEBUG
+    // Simulate button press every 10 seconds
+    vTaskDelay(pdMS_TO_TICKS(10000));
+
+    state_machine_post_event(APP_GPIO_EVT_BUTTON_PRESSED, APP_GPIO);
+#else
     if (xSemaphoreTake(gpio_button_semaphore, portMAX_DELAY))
     {
       gpio_intr_disable(BUTTON_PIN);
@@ -108,15 +116,12 @@ static void gpio_button_task(void *args)
       ESP_LOGI(TAG_GPIO, "Button level: %d", button_level);
       gpio_set_level(HEART_LED_ARRAY_PIN, button_level);
 
-      // Post event to GPIO task
-      GpioMsg_t msg = {.type = APP_GPIO_EVT_BUTTON_PRESSED, .data.button_level = button_level};
-      gpio_post_msg(msg);
-
-      // Also notify state machine
+      // Notify state machine
       state_machine_post_event(APP_GPIO_EVT_BUTTON_PRESSED, APP_GPIO);
 
       gpio_intr_enable(BUTTON_PIN);
     }
+#endif // DEBUG
   }
 }
 
@@ -168,10 +173,6 @@ static void gpio_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
       gpio_set_level(LED_STATUS_PIN_2, 0);
       break;
     }
-    break;
-
-  case APP_GPIO_EVT_BUTTON_PRESSED:
-    ESP_LOGI(TAG_GPIO, "Button pressed event received, level=%d", msg->data.button_level);
     break;
 
   default:

@@ -17,7 +17,8 @@ typedef enum
 {
   STATE_IDLE,
   STATE_PROVISIONING,
-  STATE_CONNECTED,
+  STATE_WIFI_CONNECTED,
+  STATE_AWS_IOT_CONNECTED
 } eAppState_t;
 
 static const char *TAG = "STATE_MACHINE_TASK";
@@ -60,14 +61,17 @@ static void state_machine_enter_state(eAppState_t new_state)
     }
     break;
 
-  case STATE_CONNECTED:
-    gpio_set_state(GPIO_STATE_LED_SOLID);
+  case STATE_WIFI_CONNECTED:
     if (sm_http_server)
     {
       http_stop_webserver(sm_http_server);
       sm_http_server = NULL;
     }
     wifi_ping("airgahux2exxu-ats.iot.us-east-1.amazonaws.com");
+    break;
+
+  case STATE_AWS_IOT_CONNECTED:
+    gpio_set_state(GPIO_STATE_LED_SOLID);
     break;
   }
 }
@@ -95,8 +99,8 @@ static void state_machine_on_message(GenericTask *self, void *msg_buf, size_t ms
     }
     else if (event == APP_EVT_WIFI_CONNECTED)
     {
-      ESP_LOGI(TAG, "Transition: %d -> %d", current_state, STATE_CONNECTED);
-      current_state = STATE_CONNECTED;
+      ESP_LOGI(TAG, "Transition: %d -> %d", current_state, STATE_WIFI_CONNECTED);
+      current_state = STATE_WIFI_CONNECTED;
       state_machine_enter_state(current_state);
     }
     else if (event == APP_EVT_WIFI_DISCONNECTED)
@@ -112,8 +116,8 @@ static void state_machine_on_message(GenericTask *self, void *msg_buf, size_t ms
   case STATE_PROVISIONING:
     if (event == APP_EVT_WIFI_CONNECTED)
     {
-      ESP_LOGI(TAG, "Transition: %d -> %d", current_state, STATE_CONNECTED);
-      current_state = STATE_CONNECTED;
+      ESP_LOGI(TAG, "Transition: %d -> %d", current_state, STATE_WIFI_CONNECTED);
+      current_state = STATE_WIFI_CONNECTED;
       state_machine_enter_state(current_state);
     }
     else
@@ -122,7 +126,7 @@ static void state_machine_on_message(GenericTask *self, void *msg_buf, size_t ms
     }
     break;
 
-  case STATE_CONNECTED:
+  case STATE_WIFI_CONNECTED:
     if (event == APP_EVT_WIFI_DISCONNECTED)
     {
       ESP_LOGI(TAG, "Transition: %d -> %d", current_state, STATE_IDLE);
@@ -137,18 +141,40 @@ static void state_machine_on_message(GenericTask *self, void *msg_buf, size_t ms
     else if (event == APP_EVT_PING_TIMEOUT)
     {
       ESP_LOGI(TAG, "Received Ping Timeout event");
+      ESP_LOGI(TAG, "Transition: %d -> %d", current_state, STATE_IDLE);
+      current_state = STATE_IDLE;
+      state_machine_enter_state(current_state);
     }
     else if (event == APP_AWS_IOT_EVT_CONNECTED)
     {
-      ESP_LOGI(TAG, "Received AWS IoT Connected event");
+      ESP_LOGI(TAG, "Transition: %d -> %d", current_state, STATE_AWS_IOT_CONNECTED);
+      current_state = STATE_AWS_IOT_CONNECTED;
+      state_machine_enter_state(current_state);
+    }
+    else
+    {
+      ESP_LOGW(TAG, "Unexpected event %d in STATE_WIFI_CONNECTED", event);
+    }
+    break;
+
+  case STATE_AWS_IOT_CONNECTED:
+    if (event == APP_EVT_WIFI_DISCONNECTED)
+    {
+      ESP_LOGI(TAG, "Received WiFi Disconnected event");
+      ESP_LOGI(TAG, "Transition: %d -> %d", current_state, STATE_IDLE);
+      current_state = STATE_IDLE;
+      state_machine_enter_state(current_state);
     }
     else if (event == APP_AWS_IOT_EVT_DISCONNECTED)
     {
       ESP_LOGI(TAG, "Received AWS IoT Disconnected event");
+      ESP_LOGI(TAG, "Transition: %d -> %d", current_state, STATE_IDLE);
+      current_state = STATE_IDLE;
+      state_machine_enter_state(current_state);
     }
     else
     {
-      ESP_LOGW(TAG, "Unexpected event %d in STATE_CONNECTED", event);
+      ESP_LOGW(TAG, "Unexpected event %d in STATE_AWS_IOT_CONNECTED", event);
     }
     break;
   }

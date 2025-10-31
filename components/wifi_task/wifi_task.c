@@ -181,7 +181,7 @@ static void wifi_ping_start(const char *hostname)
 
   esp_ping_config_t ping_config = ESP_PING_DEFAULT_CONFIG();
   ping_config.target_addr = target_addr;
-  ping_config.count = 4;
+  ping_config.count = 1;
   esp_ping_callbacks_t cbs = {
       .on_ping_success = wifi_on_ping_success,
       .on_ping_timeout = wifi_on_ping_timeout,

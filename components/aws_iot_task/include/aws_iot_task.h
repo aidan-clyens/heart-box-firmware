@@ -15,6 +15,9 @@ void aws_iot_connect(void);
 /** @brief Start listening for incoming MQTT messages from AWS IoT */
 void aws_iot_start_listening(void);
 
+/** @brief Publish a button press event to AWS IoT */
+void aws_iot_publish_button_event(void);
+
 #ifdef __cplusplus
 }
 #endif

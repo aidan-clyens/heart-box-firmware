@@ -180,7 +180,8 @@ static void state_machine_on_message(GenericTask *self, void *msg_buf, size_t ms
     else if (event == APP_GPIO_EVT_BUTTON_PRESSED)
     {
       ESP_LOGI(TAG, "Button pressed event received in STATE_AWS_IOT_CONNECTED");
-      // Handle button press event here
+      // Publish a message to AWS IoT when the button is pressed
+      aws_iot_publish_button_event();
     }
     else
     {

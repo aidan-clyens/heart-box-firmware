@@ -109,8 +109,16 @@ void aws_iot_start_listening(void)
   aws_iot_post_msg(msg);
 }
 
+/** @brief Public API: Publish a button press event to AWS IoT */
+void aws_iot_publish_button_event(void)
+{
+  AwsIotMsg_t msg;
+  msg.type = APP_AWS_IOT_CMD_PUBLISH_BUTTON_EVENT;
+  aws_iot_post_msg(msg);
+}
+
 /** @brief AWS IoT Keep Alive Task */
-static void aws_iot_keep_alive_task()
+static void aws_iot_keep_alive_task(void)
 {
   ESP_LOGI(TAG_AWS_IOT_KEEP_ALIVE, "AWS IoT Keep Alive Task started.");
 
@@ -292,6 +300,20 @@ static void aws_iot_start_listening_cmd()
   xTaskCreate(aws_iot_keep_alive_task, TAG_AWS_IOT_KEEP_ALIVE, 4096, NULL, 5, NULL);
 }
 
+/** @brief Handle the AWS IoT publish button event command */
+static void aws_iot_publish_button_event_cmd()
+{
+  // TODO - Implement publishing button event to AWS IoT
+}
+
+/** @brief Handle incoming PUBLISH packet
+ *  @param p_packet_info Pointer to the MQTT packet info
+ */
+static void aws_iot_handle_publish_packet(MQTTPacketInfo_t * p_packet_info)
+{
+  // TODO - Implement handling incoming PUBLISH packets
+}
+
 /** @brief Handle incoming SUBACK packet
  *  @param p_packet_info Pointer to the MQTT packet info
  */
@@ -340,6 +362,7 @@ static void aws_iot_event_callback(MQTTContext_t * p_mqtt_context,
   {
     // TODO - Handle incoming publish
     ESP_LOGI(TAG_AWS_IOT, "Received MQTT PUBLISH packet (Packet ID: %u)", packet_id);
+    aws_iot_handle_publish_packet(p_packet_info);
   }
   else
   {
@@ -494,6 +517,9 @@ static void aws_iot_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
       break;
     case APP_AWS_IOT_CMD_START_LISTENING:
       aws_iot_start_listening_cmd();
+      break;
+    case APP_AWS_IOT_CMD_PUBLISH_BUTTON_EVENT:
+      aws_iot_publish_button_event_cmd();
       break;
     default:
       break;

@@ -32,11 +32,10 @@ typedef enum
   APP_EVT_PING_TIMEOUT,
 
   // -- GPIO Commands -- //
-  APP_GPIO_CMD_SET_STATE, /**< Command: set LED state */
+  APP_GPIO_CMD_SET_STATE,
 
   // -- GPIO Events -- //
-  APP_EVT_BUTTON_PRESSED,
-  APP_GPIO_EVT_BUTTON_PRESSED, /**< Event: button pressed */
+  APP_GPIO_EVT_BUTTON_PRESSED,
 
   // -- AWS IoT Commands -- //
   APP_AWS_IOT_CMD_CONNECT,
@@ -51,16 +50,19 @@ typedef enum
   APP_MSG_NONE = -1 /**< Generic "no message" marker */
 } eAppMsgType_t;
 
+/** @enum eAppMsgSource_t
+ *  @brief Name of the source task a message originated from
+ */
 typedef enum
 {
   APP_SM,
   APP_WIFI,
   APP_GPIO,
-  APP_MQTT
+  APP_AWS_IOT
 } eAppMsgSource_t;
 
 /** @enum eGpioState_t
- *  @brief States for the GPIO status LED
+ *  @brief Name of the GPIO status LED states
  */
 typedef enum
 {

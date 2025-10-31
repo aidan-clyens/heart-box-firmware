@@ -127,7 +127,7 @@ static void aws_iot_keep_alive_task()
       MQTT_Disconnect(&mqtt_context);
       xTlsDisconnect(&network_context);
 
-      state_machine_post_event(APP_AWS_IOT_EVT_DISCONNECTED, APP_MQTT);
+      state_machine_post_event(APP_AWS_IOT_EVT_DISCONNECTED, APP_AWS_IOT);
       vTaskDelete(NULL);
     }
 
@@ -265,7 +265,7 @@ static void aws_iot_connect_cmd(void)
   if (mqtt_status != MQTTSuccess)
   {
     ESP_LOGE(TAG_AWS_IOT, "Failed to establish TLS/MQTT session to AWS IoT broker %s: %s", MQTT_BROKER_ENDPOINT, MQTT_Status_strerror(mqtt_status));
-    state_machine_post_event(APP_AWS_IOT_EVT_DISCONNECTED, APP_MQTT);
+    state_machine_post_event(APP_AWS_IOT_EVT_DISCONNECTED, APP_AWS_IOT);
     return;
   }
 
@@ -277,11 +277,11 @@ static void aws_iot_connect_cmd(void)
     MQTT_Disconnect(&mqtt_context);
     xTlsDisconnect(&network_context);
 
-    state_machine_post_event(APP_AWS_IOT_EVT_DISCONNECTED, APP_MQTT);
+    state_machine_post_event(APP_AWS_IOT_EVT_DISCONNECTED, APP_AWS_IOT);
     return;
   }
 
-  state_machine_post_event(APP_AWS_IOT_EVT_CONNECTED, APP_MQTT);
+  state_machine_post_event(APP_AWS_IOT_EVT_CONNECTED, APP_AWS_IOT);
   ESP_LOGI(TAG_AWS_IOT, "Connected to AWS IoT %s successfully.", MQTT_BROKER_ENDPOINT);
 }
 

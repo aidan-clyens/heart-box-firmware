@@ -113,7 +113,7 @@ static void gpio_button_task(void *args)
       gpio_post_msg(msg);
 
       // Also notify state machine
-      state_machine_post_event(APP_EVT_BUTTON_PRESSED, APP_GPIO);
+      state_machine_post_event(APP_GPIO_EVT_BUTTON_PRESSED, APP_GPIO);
 
       gpio_intr_enable(BUTTON_PIN);
     }

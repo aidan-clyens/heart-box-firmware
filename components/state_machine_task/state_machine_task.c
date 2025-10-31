@@ -177,6 +177,11 @@ static void state_machine_on_message(GenericTask *self, void *msg_buf, size_t ms
       current_state = STATE_IDLE;
       state_machine_enter_state(current_state);
     }
+    else if (event == APP_GPIO_EVT_BUTTON_PRESSED)
+    {
+      ESP_LOGI(TAG, "Button pressed event received in STATE_AWS_IOT_CONNECTED");
+      // Handle button press event here
+    }
     else
     {
       ESP_LOGW(TAG, "Unexpected event %d in STATE_AWS_IOT_CONNECTED", event);

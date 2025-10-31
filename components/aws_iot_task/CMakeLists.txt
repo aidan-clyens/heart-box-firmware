@@ -6,4 +6,5 @@ idf_component_register(
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
   MQTT_CLIENT_IDENTIFIER="${DEVICE_NAME}"
+  MQTT_TOPIC="${TOPIC_NAME}"
 )

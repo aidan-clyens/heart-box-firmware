@@ -29,6 +29,14 @@
 #endif // MQTT_CLIENT_IDENTIFIER
 #define MQTT_CLIENT_IDENTIFIER_LENGTH ((uint16_t)(sizeof(MQTT_CLIENT_IDENTIFIER) - 1))
 
+#define MQTT_OUTGOING_PUBLISH_RECORD_LEN 10U
+#define MQTT_INCOMING_PUBLISH_RECORD_LEN 10U
+
+#ifndef MQTT_TOPIC
+#define MQTT_TOPIC "Default"
+#endif // MQTT_TOPIC
+#define MQTT_TOPIC_LENGTH ((uint16_t)(sizeof(MQTT_TOPIC) - 1))
+
 extern const char root_cert_auth_start[] asm("_binary_AmazonRootCA1_pem_start");
 extern const char root_cert_auth_end[] asm("_binary_AmazonRootCA1_pem_end");
 
@@ -45,6 +53,12 @@ static GenericTask aws_iot_task;
 static MQTTContext_t mqtt_context = {0};
 static MQTTConnectInfo_t connect_info = {0};
 static NetworkContext_t network_context = {0};
+
+static MQTTSubscribeInfo_t global_subscription_list[1];
+static unsigned short global_subscribe_packet_identifier = 0U;
+
+static MQTTPubAckInfo_t outgoing_publish_records[MQTT_OUTGOING_PUBLISH_RECORD_LEN];
+static MQTTPubAckInfo_t incoming_publish_records[MQTT_INCOMING_PUBLISH_RECORD_LEN];
 
 static bool session_present = false;
 
@@ -68,10 +82,9 @@ void aws_iot_connect(void)
   aws_iot_post_msg(msg);
 }
 
-/** @brief Handle the AWS IoT connect command */
-static void aws_iot_connect_cmd(void)
+/** @brief Establish a TLS connection and MQTT session with AWS IoT broker */
+static MQTTStatus_t aws_iot_establish_mqtt_connection(void)
 {
-  // Establish TLS connection
   ESP_LOGI(TAG_AWS_IOT, "Establishing TLS connection to %s...", MQTT_BROKER_ENDPOINT);
 
   connect_info.cleanSession = !session_present;
@@ -80,37 +93,75 @@ static void aws_iot_connect_cmd(void)
   if (tls_status != TLS_TRANSPORT_SUCCESS)
   {
     ESP_LOGE(TAG_AWS_IOT, "TLS connection failed: Status = %d.", tls_status);
-    
-    switch(tls_status) {
-      case TLS_TRANSPORT_INVALID_CREDENTIALS:
-        ESP_LOGE(TAG_AWS_IOT, "Invalid credentials - check certificate/key");
-        break;
-      case TLS_TRANSPORT_HANDSHAKE_FAILED:
-        ESP_LOGE(TAG_AWS_IOT, "TLS handshake failed - check CA cert and endpoint");
-        break;
-      case TLS_TRANSPORT_CONNECT_FAILURE:
-        ESP_LOGE(TAG_AWS_IOT, "Connection failure - check network and endpoint");
-        break;
-      default:
-        ESP_LOGE(TAG_AWS_IOT, "Unknown TLS error");
-        break;
+
+    switch (tls_status)
+    {
+    case TLS_TRANSPORT_INVALID_CREDENTIALS:
+      ESP_LOGE(TAG_AWS_IOT, "Invalid credentials - check certificate/key");
+      break;
+    case TLS_TRANSPORT_HANDSHAKE_FAILED:
+      ESP_LOGE(TAG_AWS_IOT, "TLS handshake failed - check CA cert and endpoint");
+      break;
+    case TLS_TRANSPORT_CONNECT_FAILURE:
+      ESP_LOGE(TAG_AWS_IOT, "Connection failure - check network and endpoint");
+      break;
+    default:
+      ESP_LOGE(TAG_AWS_IOT, "Unknown TLS error");
+      break;
     }
-    return;
+    return MQTTServerRefused;
   }
 
   ESP_LOGI(TAG_AWS_IOT, "TLS connection established successfully.");
   ESP_LOGI(TAG_AWS_IOT, "Establishing MQTT connection...");
 
   // Now connect MQTT over the established TLS connection
-  MQTTStatus_t mqtt_status = MQTT_Connect(&mqtt_context, &connect_info, NULL, MQTT_CONNACK_RECV_TIMEOUT_MS, &session_present);
+  return MQTT_Connect(&mqtt_context, &connect_info, NULL, MQTT_CONNACK_RECV_TIMEOUT_MS, &session_present);
+}
 
+/** @brief Subscribe to the configured AWS IoT topic */
+static MQTTStatus_t aws_iot_subscribe_to_topic()
+{
+  ESP_LOGI(TAG_AWS_IOT, "Subscribing to topic %s...", MQTT_TOPIC);
+
+  (void)memset((void *)global_subscription_list, 0x00, sizeof(global_subscription_list));
+
+  // Subscribe to one topic
+  global_subscription_list[0].qos = MQTTQoS1;
+  global_subscription_list[0].pTopicFilter = MQTT_TOPIC;
+  global_subscription_list[0].topicFilterLength = MQTT_TOPIC_LENGTH;
+
+  // Generate a unique packet identifier for the SUBSCRIBE packet
+  global_subscribe_packet_identifier = MQTT_GetPacketId(&mqtt_context);
+
+  ESP_LOGI(TAG_AWS_IOT, "Sending SUBSCRIBE packet with ID %u", global_subscribe_packet_identifier);
+
+  return MQTT_Subscribe(&mqtt_context,
+                        global_subscription_list,
+                        sizeof(global_subscription_list) / sizeof(MQTTSubscribeInfo_t),
+                        global_subscribe_packet_identifier);
+}
+
+/** @brief Handle the AWS IoT connect command */
+static void aws_iot_connect_cmd(void)
+{
+  MQTTStatus_t mqtt_status = aws_iot_establish_mqtt_connection();
   if (mqtt_status != MQTTSuccess)
   {
-    ESP_LOGE(TAG_AWS_IOT, "MQTT_Connect failed: Status = %s.", MQTT_Status_strerror(mqtt_status));
+    ESP_LOGE(TAG_AWS_IOT, "Failed to establish TLS/MQTT session to AWS IoT broker %s: %s", MQTT_BROKER_ENDPOINT, MQTT_Status_strerror(mqtt_status));
     return;
   }
+  ESP_LOGI(TAG_AWS_IOT, "TLS/MQTT session established to AWS IoT broker %s successfully.", MQTT_BROKER_ENDPOINT);
 
-  ESP_LOGI(TAG_AWS_IOT, "Connected to AWS IoT broker %s successfully.", MQTT_BROKER_ENDPOINT);
+  mqtt_status = aws_iot_subscribe_to_topic();
+  if (mqtt_status != MQTTSuccess)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Failed to subscribe to AWS IoT topic %s: %s", MQTT_TOPIC, MQTT_Status_strerror(mqtt_status));
+    return;
+  }
+  ESP_LOGI(TAG_AWS_IOT, "Subscribed to AWS IoT topic %s successfully.", MQTT_TOPIC);
+
+  ESP_LOGI(TAG_AWS_IOT, "Connected to AWS IoT %s successfully.", MQTT_BROKER_ENDPOINT);
 }
 
 static void aws_iot_event_callback(MQTTContext_t * p_mqtt_context,
@@ -185,6 +236,18 @@ static void aws_iot_on_init(GenericTask *self)
   if (mqtt_status != MQTTSuccess)
   {
     ESP_LOGE(TAG_AWS_IOT, "MQTT_Init failed: Status = %s.", MQTT_Status_strerror(mqtt_status));
+    return;
+  }
+
+  mqtt_status = MQTT_InitStatefulQoS(&mqtt_context,
+                                     outgoing_publish_records,
+                                     MQTT_OUTGOING_PUBLISH_RECORD_LEN,
+                                     incoming_publish_records,
+                                     MQTT_INCOMING_PUBLISH_RECORD_LEN);
+
+  if (mqtt_status != MQTTSuccess)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "MQTT_InitStatefulQoS failed: Status = %s.", MQTT_Status_strerror(mqtt_status));
     return;
   }
 

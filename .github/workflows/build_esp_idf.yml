@@ -1,0 +1,60 @@
+name: Build with ESP-IDF
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache ESP-IDF
+        id: cache-esp-idf
+        uses: actions/cache@v4
+        with:
+          path: ~/esp-idf
+          key: ${{ runner.os }}-esp-idf-v5.5.1
+
+      - name: Download and install ESP-IDF v5.5.1
+        if: steps.cache-esp-idf.outputs.cache-hit != 'true'
+        run: |
+          cd ~
+          git clone --recursive --depth 1 --branch v5.5.1 https://github.com/espressif/esp-idf.git
+          cd esp-idf
+          ./install.sh esp32
+
+      - name: Source ESP-IDF environment
+        run: |
+          . ~/esp-idf/export.sh
+          echo "IDF_PATH=$IDF_PATH" >> $GITHUB_ENV
+          echo "$HOME/.espressif/tools" >> $GITHUB_PATH
+          echo "$IDF_PATH/tools" >> $GITHUB_PATH
+
+      - name: Configure project
+        run: |
+          . ~/esp-idf/export.sh
+          idf.py reconfigure
+
+      - name: Build project
+        run: |
+          . ~/esp-idf/export.sh
+          idf.py build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-build
+          path: |
+            build/*.bin
+            build/bootloader/bootloader.bin
+            build/partition_table/partition-table.bin
+          retention-days: 7

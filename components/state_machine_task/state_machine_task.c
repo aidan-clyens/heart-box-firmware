@@ -10,6 +10,9 @@
 
 #define DEBUG_MODE
 
+#define STATE_MACHINE_TASK_STACK_SIZE 4096
+#define STATE_MACHINE_TASK_PRIORITY   15
+
 /** @enum eAppState_t
  *  @brief State Machine Application States
  */
@@ -26,6 +29,42 @@ static const char *TAG = "STATE_MACHINE_TASK";
 static GenericTask sm_task;
 static httpd_handle_t sm_http_server = NULL;
 static eAppState_t current_state = STATE_IDLE;
+
+/** @brief Public API: Post an event to the State Machine task
+ *  @param event The event to post
+ *  @return pdTRUE if the item was successfully posted, otherwise errQUEUE_FULL
+ */
+BaseType_t state_machine_post_event(eAppMsgType_t type, eAppMsgSource_t source)
+{
+  if (type < 0 || source < 0)
+  {
+    ESP_LOGE(TAG, "Invalid event type or source");
+    return pdFALSE;
+  }
+  AppMsg_t app_msg = {.type = type, .source = source};
+  return generic_task_post_msg(&sm_task, &app_msg, sm_task.item_size);
+}
+
+/** @brief Convert state enum to string
+ *  @param state State enum
+ *  @return String representation of the state name
+ */
+static const char *state_machine_state_to_string(eAppState_t state)
+{
+  switch (state)
+  {
+  case STATE_IDLE:
+    return "IDLE";
+  case STATE_PROVISIONING:
+    return "PROVISIONING";
+  case STATE_WIFI_CONNECTED:
+    return "WIFI_CONNECTED";
+  case STATE_AWS_IOT_CONNECTED:
+    return "AWS_IOT_CONNECTED";
+  default:
+    return "UNKNOWN";
+  }
+}
 
 /** @brief Transition to a new state
  *  @param new_state New state
@@ -87,6 +126,14 @@ static void state_machine_enter_state(eAppState_t new_state)
  */
 static void state_machine_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
 {
+  (void)msg_len; // Not used
+
+  if (msg_buf == NULL || msg_len < sizeof(AppMsg_t))
+  {
+    ESP_LOGE(TAG, "Invalid message buffer");
+    return;
+  }
+
   AppMsg_t *app_msg = (AppMsg_t*)msg_buf;
   eAppMsgSource_t source = app_msg->source;
   eAppMsgType_t event = app_msg->type;
@@ -98,13 +145,13 @@ static void state_machine_on_message(GenericTask *self, void *msg_buf, size_t ms
   case STATE_IDLE:
     if (event == APP_EVT_AP_STARTED)
     {
-      ESP_LOGI(TAG, "Transition: %d -> %d", current_state, STATE_PROVISIONING);
+      ESP_LOGI(TAG, "Transition: %s -> %s", state_machine_state_to_string(current_state), state_machine_state_to_string(STATE_PROVISIONING));
       current_state = STATE_PROVISIONING;
       state_machine_enter_state(current_state);
     }
     else if (event == APP_EVT_WIFI_CONNECTED)
     {
-      ESP_LOGI(TAG, "Transition: %d -> %d", current_state, STATE_WIFI_CONNECTED);
+      ESP_LOGI(TAG, "Transition: %s -> %s", state_machine_state_to_string(current_state), state_machine_state_to_string(STATE_WIFI_CONNECTED));
       current_state = STATE_WIFI_CONNECTED;
       state_machine_enter_state(current_state);
     }
@@ -121,7 +168,7 @@ static void state_machine_on_message(GenericTask *self, void *msg_buf, size_t ms
   case STATE_PROVISIONING:
     if (event == APP_EVT_WIFI_CONNECTED)
     {
-      ESP_LOGI(TAG, "Transition: %d -> %d", current_state, STATE_WIFI_CONNECTED);
+      ESP_LOGI(TAG, "Transition: %s -> %s", state_machine_state_to_string(current_state), state_machine_state_to_string(STATE_WIFI_CONNECTED));
       current_state = STATE_WIFI_CONNECTED;
       state_machine_enter_state(current_state);
     }
@@ -134,7 +181,7 @@ static void state_machine_on_message(GenericTask *self, void *msg_buf, size_t ms
   case STATE_WIFI_CONNECTED:
     if (event == APP_EVT_WIFI_DISCONNECTED)
     {
-      ESP_LOGI(TAG, "Transition: %d -> %d", current_state, STATE_IDLE);
+      ESP_LOGI(TAG, "Transition: %s -> %s", state_machine_state_to_string(current_state), state_machine_state_to_string(STATE_IDLE));
       current_state = STATE_IDLE;
       state_machine_enter_state(current_state);
     }
@@ -146,13 +193,13 @@ static void state_machine_on_message(GenericTask *self, void *msg_buf, size_t ms
     else if (event == APP_EVT_PING_TIMEOUT)
     {
       ESP_LOGI(TAG, "Received Ping Timeout event");
-      ESP_LOGI(TAG, "Transition: %d -> %d", current_state, STATE_IDLE);
+      ESP_LOGI(TAG, "Transition: %s -> %s", state_machine_state_to_string(current_state), state_machine_state_to_string(STATE_IDLE));
       current_state = STATE_IDLE;
       state_machine_enter_state(current_state);
     }
     else if (event == APP_AWS_IOT_EVT_CONNECTED)
     {
-      ESP_LOGI(TAG, "Transition: %d -> %d", current_state, STATE_AWS_IOT_CONNECTED);
+      ESP_LOGI(TAG, "Transition: %s -> %s", state_machine_state_to_string(current_state), state_machine_state_to_string(STATE_AWS_IOT_CONNECTED));
       current_state = STATE_AWS_IOT_CONNECTED;
       state_machine_enter_state(current_state);
     }
@@ -166,14 +213,14 @@ static void state_machine_on_message(GenericTask *self, void *msg_buf, size_t ms
     if (event == APP_EVT_WIFI_DISCONNECTED)
     {
       ESP_LOGI(TAG, "Received WiFi Disconnected event");
-      ESP_LOGI(TAG, "Transition: %d -> %d", current_state, STATE_IDLE);
+      ESP_LOGI(TAG, "Transition: %s -> %s", state_machine_state_to_string(current_state), state_machine_state_to_string(STATE_IDLE));
       current_state = STATE_IDLE;
       state_machine_enter_state(current_state);
     }
     else if (event == APP_AWS_IOT_EVT_DISCONNECTED)
     {
       ESP_LOGI(TAG, "Received AWS IoT Disconnected event");
-      ESP_LOGI(TAG, "Transition: %d -> %d", current_state, STATE_IDLE);
+      ESP_LOGI(TAG, "Transition: %s -> %s", state_machine_state_to_string(current_state), state_machine_state_to_string(STATE_IDLE));
       current_state = STATE_IDLE;
       state_machine_enter_state(current_state);
     }
@@ -191,16 +238,6 @@ static void state_machine_on_message(GenericTask *self, void *msg_buf, size_t ms
   }
 }
 
-/** @brief Post an event to the State Machine task
- *  @param event The event to post
- *  @return pdTRUE if the item was successfully posted, otherwise errQUEUE_FULL
- */
-BaseType_t state_machine_post_event(eAppMsgType_t type, eAppMsgSource_t source)
-{
-  AppMsg_t app_msg = {.type = type, .source = source};
-  return generic_task_post_msg(&sm_task, &app_msg, sm_task.item_size);
-}
-
 /** @brief Create State Machine Task
  */
 void state_machine_task_init(void)
@@ -213,5 +250,5 @@ void state_machine_task_init(void)
   current_state = STATE_IDLE;
   state_machine_enter_state(current_state);
 
-  generic_task_start(&sm_task, 4096, 15);
+  generic_task_start(&sm_task, STATE_MACHINE_TASK_STACK_SIZE, STATE_MACHINE_TASK_PRIORITY);
 }

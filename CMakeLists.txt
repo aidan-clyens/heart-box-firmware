@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.16.0)
 
-set(DEVICE_NAME "Heart_Box_1")
-set(TOPIC_NAME "heartbox/1")
-set(AWS_IOT_ENDPOINT "airgahux2exxu-ats.iot.us-east-1.amazonaws.com")
+set(DEVICE_NAME "Test")
+set(TOPIC_NAME "")
+set(AWS_IOT_ENDPOINT "")
 
 set(AWS_IOT_PATH "${CMAKE_CURRENT_LIST_DIR}/components/esp-aws-iot")
 set(CERTS_PATH "${CMAKE_CURRENT_LIST_DIR}/certs/${DEVICE_NAME}")

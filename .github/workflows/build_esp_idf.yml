@@ -58,6 +58,18 @@ jobs:
           . ~/esp-idf/export.sh
           idf.py build
 
+      - name: Configure test app
+        run: |
+          . ~/esp-idf/export.sh
+          cd test_app
+          idf.py reconfigure
+
+      - name: Build test app
+        run: |
+          . ~/esp-idf/export.sh
+          cd test_app
+          idf.py build
+
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:

@@ -36,17 +36,19 @@ typedef enum
 
   // -- GPIO Events -- //
   APP_GPIO_EVT_BUTTON_PRESSED,
+  APP_GPIO_EVT_BUTTON_RELEASED,
 
   // -- AWS IoT Commands -- //
   APP_AWS_IOT_CMD_CONNECT,
-  APP_AWS_IOT_CMD_DISCONNECT,
   APP_AWS_IOT_CMD_START_LISTENING,
-  APP_AWS_IOT_CMD_PUBLISH_BUTTON_EVENT,
+  APP_AWS_IOT_CMD_PUBLISH_BUTTON_PRESSED,
+  APP_AWS_IOT_CMD_PUBLISH_BUTTON_RELEASED,
 
   // -- AWS IoT Events -- //
   APP_AWS_IOT_EVT_CONNECTED,
   APP_AWS_IOT_EVT_DISCONNECTED,
-  APP_AWS_IOT_EVT_ERROR,
+  APP_AWS_IOT_EVT_MSG_PRESSED,
+  APP_AWS_IOT_EVT_MSG_RELEASED,
 
   APP_MSG_NONE = -1 /**< Generic "no message" marker */
 } eAppMsgType_t;
@@ -113,10 +115,6 @@ typedef struct
 typedef struct
 {
   eAppMsgType_t type;
-  union
-  {
-    int placeholder; // Placeholder for actual message data
-  } data;
 } AwsIotMsg_t;
 
 /** @struct AppMsg_t

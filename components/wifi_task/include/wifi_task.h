@@ -23,6 +23,9 @@ void wifi_set_ap_mode(void);
  */
 void wifi_set_sta_credentials(const char *ssid, const char *password);
 
+/** @brief Get the current WiFi credentials
+ *  @return WiFi SSID and password
+ */
 WifiCredentials_t wifi_get_current_credentials(void);
 
 /** @brief Send a ping command to an external host

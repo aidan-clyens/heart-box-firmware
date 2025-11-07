@@ -105,6 +105,8 @@ static void gpio_button_task(void *args)
     vTaskDelay(pdMS_TO_TICKS(10000));
 
     state_machine_post_event(APP_GPIO_EVT_BUTTON_PRESSED, APP_GPIO);
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    state_machine_post_event(APP_GPIO_EVT_BUTTON_RELEASED, APP_GPIO);
 #else
     if (xSemaphoreTake(gpio_button_semaphore, portMAX_DELAY))
     {

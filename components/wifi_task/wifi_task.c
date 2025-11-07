@@ -50,6 +50,9 @@ void wifi_set_sta_credentials(const char *ssid, const char *password)
   wifi_post_msg(msg);
 }
 
+/** @brief Get the current WiFi credentials
+ *  @return WiFi SSID and password
+ */
 WifiCredentials_t wifi_get_current_credentials(void)
 {
   WifiCredentials_t creds = {};

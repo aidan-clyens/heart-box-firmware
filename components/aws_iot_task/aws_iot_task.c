@@ -19,10 +19,15 @@
 #include "message_types.h"
 #include "state_machine_task.h"
 
+#include "cJSON.h"
+
+#define MQTT_AWS_IOT_TASK_STACK_SIZE 4096
+#define MQTT_KEEP_ALIVE_TASK_STACK_SIZE 4096
+
 // User definitions
 #ifndef MQTT_BROKER_ENDPOINT
-#define MQTT_BROKER_ENDPOINT ""
-#endif // MQTT_BROKER_ENDPOINT
+#error "MQTT_BROKER_ENDPOINT must be defined in sdkconfig"
+#endif
 
 #ifndef MQTT_CLIENT_IDENTIFIER
 #define MQTT_CLIENT_IDENTIFIER "Default"
@@ -64,6 +69,11 @@ static const char *TAG_AWS_IOT = "AWS_IOT_TASK";
 static const char *TAG_AWS_IOT_KEEP_ALIVE = "AWS_IOT_KEEP_ALIVE_TASK";
 static GenericTask aws_iot_task;
 
+static const char *MSG_CLIENT_TAG = "client";
+static const char *MSG_BUTTON_TAG = "button";
+static const char *MSG_BUTTON_PRESSED = "pressed";
+static const char *MSG_BUTTON_RELEASED = "released";
+
 // MQTT connection
 static MQTTContext_t mqtt_context = {0};
 static MQTTConnectInfo_t connect_info = {0};
@@ -84,6 +94,8 @@ static MQTTPubAckInfo_t incoming_publish_records[MQTT_INCOMING_PUBLISH_RECORD_LE
 // Events handling
 static bool session_present = false;
 static EventGroupHandle_t mqtt_event_group = NULL;
+
+static TaskHandle_t keep_alive_task_handle = NULL;
 
 /** @brief Post a command message to the AWS IoT task
  *  @param msg The message to post
@@ -110,10 +122,18 @@ void aws_iot_start_listening(void)
 }
 
 /** @brief Public API: Publish a button press event to AWS IoT */
-void aws_iot_publish_button_event(void)
+void aws_iot_publish_button_pressed_event(void)
 {
   AwsIotMsg_t msg;
-  msg.type = APP_AWS_IOT_CMD_PUBLISH_BUTTON_EVENT;
+  msg.type = APP_AWS_IOT_CMD_PUBLISH_BUTTON_PRESSED;
+  aws_iot_post_msg(msg);
+}
+
+/** @brief Public API: Publish a button released event to AWS IoT */
+void aws_iot_publish_button_released_event(void)
+{
+  AwsIotMsg_t msg;
+  msg.type = APP_AWS_IOT_CMD_PUBLISH_BUTTON_RELEASED;
   aws_iot_post_msg(msg);
 }
 
@@ -136,6 +156,9 @@ static void aws_iot_keep_alive_task()
       xTlsDisconnect(&network_context);
 
       state_machine_post_event(APP_AWS_IOT_EVT_DISCONNECTED, APP_AWS_IOT);
+
+      ESP_LOGI(TAG_AWS_IOT_KEEP_ALIVE, "AWS IoT Keep Alive Task exiting.");
+      keep_alive_task_handle = NULL;
       vTaskDelete(NULL);
     }
 
@@ -296,12 +319,18 @@ static void aws_iot_connect_cmd(void)
 /** @brief Handle the AWS IoT start listening command */
 static void aws_iot_start_listening_cmd()
 {
+  if (keep_alive_task_handle != NULL)
+  {
+    ESP_LOGW(TAG_AWS_IOT, "Keep Alive task already running.");
+    return;
+  }
+
   // Start Keep Alive task
-  xTaskCreate(aws_iot_keep_alive_task, TAG_AWS_IOT_KEEP_ALIVE, 4096, NULL, 5, NULL);
+  xTaskCreate(aws_iot_keep_alive_task, TAG_AWS_IOT_KEEP_ALIVE, MQTT_KEEP_ALIVE_TASK_STACK_SIZE, NULL, 5, &keep_alive_task_handle);
 }
 
 /** @brief Handle the AWS IoT publish button event command */
-static void aws_iot_publish_button_event_cmd()
+static void aws_iot_publish_button_event_cmd(const char* state)
 {
   // Check if MQTT is connected
   if (mqtt_context.connectStatus != MQTTConnected)
@@ -311,8 +340,38 @@ static void aws_iot_publish_button_event_cmd()
   }
 
   // Prepare the MQTT PUBLISH message
+  cJSON *json = cJSON_CreateObject();
+  if (json == NULL)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Failed to create JSON payload for button event");
+    return;
+  }
+
+  if (cJSON_AddStringToObject(json, MSG_CLIENT_TAG, MQTT_CLIENT_IDENTIFIER) == NULL)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Failed to create JSON payload for button event");
+    cJSON_Delete(json);
+    return;
+  }
+
+  if (cJSON_AddStringToObject(json, MSG_BUTTON_TAG, state) == NULL)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Failed to create JSON payload for button event");
+    cJSON_Delete(json);
+    return;
+  }
+
+  const char *payload = cJSON_PrintUnformatted(json);
+  if (payload == NULL)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Failed to serialize JSON payload for button event");
+    cJSON_Delete(json);
+    return;
+  }
+
+  cJSON_Delete(json);
+
   MQTTPublishInfo_t publish_info = {0};
-  const char *payload = "{\"button\":\"pressed\"}";
 
   // Get a unique packet identifier for the PUBLISH packet
   uint16_t packet_id = MQTT_GetPacketId(&mqtt_context);
@@ -330,15 +389,64 @@ static void aws_iot_publish_button_event_cmd()
     return;
   }
 
-  ESP_LOGI(TAG_AWS_IOT, "Published button event to topic %s with Packet ID %u", MQTT_TOPIC, packet_id);
+  // TODO - Wait for PUBACK
+
+  ESP_LOGI(TAG_AWS_IOT, "Published button event to topic %s: %s", MQTT_TOPIC, payload);
+
+  free((void *)payload);
 }
 
 /** @brief Handle incoming PUBLISH packet
  *  @param p_packet_info Pointer to the MQTT packet info
  */
-static void aws_iot_handle_publish_packet(MQTTPacketInfo_t * p_packet_info)
+static void aws_iot_handle_publish_packet(MQTTPublishInfo_t * p_publish_info, unsigned int packet_id)
 {
-  // TODO - Implement handling incoming PUBLISH packets
+  ESP_LOGI(TAG_AWS_IOT, "Handling incoming PUBLISH packet ID %u on topic %.*s", 
+    packet_id,
+    p_publish_info->topicNameLength,
+    p_publish_info->pTopicName);
+
+  // TODO - Acknowledge the PUBLISH if QoS 1
+
+  // Parse JSON payload
+  cJSON *json = cJSON_ParseWithLength(p_publish_info->pPayload, p_publish_info->payloadLength);
+  if (json == NULL)
+  {
+    const char *error_ptr = cJSON_GetErrorPtr();
+    ESP_LOGE(TAG_AWS_IOT, "Failed to parse JSON payload before: %s", error_ptr ? error_ptr : "unknown error");
+    return;
+  }
+
+  cJSON *client_json = cJSON_GetObjectItemCaseSensitive(json, MSG_CLIENT_TAG);
+  cJSON *button_json = cJSON_GetObjectItemCaseSensitive(json, MSG_BUTTON_TAG);
+
+  if (cJSON_IsString(client_json) && (client_json->valuestring != NULL) &&
+      cJSON_IsString(button_json) && (button_json->valuestring != NULL))
+  {
+    ESP_LOGI(TAG_AWS_IOT, "Received button event from client: %s, button: %s",
+             client_json->valuestring,
+             button_json->valuestring);
+
+    // If client identifier does not match this device, notify the State Machine task
+    if (strcmp(client_json->valuestring, MQTT_CLIENT_IDENTIFIER) != 0)
+    {
+      ESP_LOGI(TAG_AWS_IOT, "Handling button event from %s", client_json->valuestring);
+      if (strcmp(button_json->valuestring, MSG_BUTTON_PRESSED) == 0)
+      {
+        state_machine_post_event(APP_AWS_IOT_EVT_MSG_PRESSED, APP_AWS_IOT);
+      }
+      else if (strcmp(button_json->valuestring, MSG_BUTTON_RELEASED) == 0)
+      {
+        state_machine_post_event(APP_AWS_IOT_EVT_MSG_RELEASED, APP_AWS_IOT);
+      }
+    }
+  }
+  else
+  {
+    ESP_LOGW(TAG_AWS_IOT, "Invalid JSON payload structure");
+  }
+
+  cJSON_Delete(json);
 }
 
 /** @brief Handle incoming SUBACK packet
@@ -387,9 +495,8 @@ static void aws_iot_event_callback(MQTTContext_t * p_mqtt_context,
 
   if ((p_packet_info->type & 0xF0U) == MQTT_PACKET_TYPE_PUBLISH)
   {
-    // TODO - Handle incoming publish
     ESP_LOGI(TAG_AWS_IOT, "Received MQTT PUBLISH packet (Packet ID: %u)", packet_id);
-    aws_iot_handle_publish_packet(p_packet_info);
+    aws_iot_handle_publish_packet(p_deserialized_info->pPublishInfo, packet_id);
   }
   else
   {
@@ -545,8 +652,11 @@ static void aws_iot_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
     case APP_AWS_IOT_CMD_START_LISTENING:
       aws_iot_start_listening_cmd();
       break;
-    case APP_AWS_IOT_CMD_PUBLISH_BUTTON_EVENT:
-      aws_iot_publish_button_event_cmd();
+    case APP_AWS_IOT_CMD_PUBLISH_BUTTON_PRESSED:
+      aws_iot_publish_button_event_cmd(MSG_BUTTON_PRESSED);
+      break;
+    case APP_AWS_IOT_CMD_PUBLISH_BUTTON_RELEASED:
+      aws_iot_publish_button_event_cmd(MSG_BUTTON_RELEASED);
       break;
     default:
       break;
@@ -560,5 +670,5 @@ void aws_iot_task_init(void)
   aws_iot_task.on_init = aws_iot_on_init;
   aws_iot_task.on_message = aws_iot_on_message;
   aws_iot_task.item_size = sizeof(AwsIotMsg_t);
-  generic_task_start(&aws_iot_task, 4096, 10);
+  generic_task_start(&aws_iot_task, MQTT_AWS_IOT_TASK_STACK_SIZE, 10);
 }

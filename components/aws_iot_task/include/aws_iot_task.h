@@ -16,7 +16,10 @@ void aws_iot_connect(void);
 void aws_iot_start_listening(void);
 
 /** @brief Publish a button press event to AWS IoT */
-void aws_iot_publish_button_event(void);
+void aws_iot_publish_button_pressed_event(void);
+
+/** @brief Publish a button released event to AWS IoT */
+void aws_iot_publish_button_released_event(void);
 
 #ifdef __cplusplus
 }

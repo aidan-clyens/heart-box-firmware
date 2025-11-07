@@ -32,6 +32,12 @@ jobs:
           cd esp-idf
           ./install.sh esp32
 
+      - name: Install ESP-IDF v5.5.1
+        if: steps.cache-esp-idf.outputs.cache-hit == 'true'
+        run: |
+          cd ~/esp-idf
+          ./install.sh esp32
+
       - name: Source ESP-IDF environment
         run: |
           . ~/esp-idf/export.sh

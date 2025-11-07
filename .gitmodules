@@ -2,3 +2,6 @@
 	path = components/esp-aws-iot
 	url = git@github.com:espressif/esp-aws-iot.git
 	branch = 202406.03-LTS-release
+[submodule "components/cJSON"]
+	path = components/cJSON
+	url = git@github.com:aidan-clyens/cJSON-ESP-IDF.git

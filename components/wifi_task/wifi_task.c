@@ -50,6 +50,19 @@ void wifi_set_sta_credentials(const char *ssid, const char *password)
   wifi_post_msg(msg);
 }
 
+WifiCredentials_t wifi_get_current_credentials(void)
+{
+  WifiCredentials_t creds = {};
+
+  wifi_config_t conf;
+  esp_wifi_get_config(WIFI_IF_STA, &conf);
+
+  strncpy(creds.ssid, (char *)conf.sta.ssid, MAX_SSID_LEN);
+  strncpy(creds.password, (char *)conf.sta.password, MAX_PASSPHRASE_LEN);
+
+  return creds;
+}
+
 /** @brief Public API: Send a ping command to an external host
  *  @param hostname IPv4 or URL for external host
  */
@@ -240,17 +253,6 @@ static void wifi_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
       esp_wifi_stop();
     esp_wifi_set_mode(WIFI_MODE_AP);
     wifi_set_config_ap("HeartBox", "password");
-    esp_wifi_start();
-    break;
-
-  case APP_WIFI_CMD_MODE_AP_STA:
-    if (is_wifi_connected)
-      esp_wifi_disconnect();
-    if (is_wifi_started)
-      esp_wifi_stop();
-    esp_wifi_set_mode(WIFI_MODE_APSTA);
-    wifi_set_config_ap("HeartBox", "password");
-    wifi_set_config_sta("OctopusChurch", "BishopNemo");
     esp_wifi_start();
     break;
 

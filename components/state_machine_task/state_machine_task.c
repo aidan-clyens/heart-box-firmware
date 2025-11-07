@@ -5,10 +5,11 @@
 #include "wifi_task.h"
 #include "wifi_http_server.h"
 #include "aws_iot_task.h"
+#include "file_system.h"
 
 #include "esp_log.h"
 
-#define DEBUG_MODE
+// #define DEBUG_MODE
 
 #define STATE_MACHINE_TASK_STACK_SIZE 4096
 #define STATE_MACHINE_TASK_PRIORITY   15
@@ -25,6 +26,9 @@ typedef enum
 } eAppState_t;
 
 static const char *TAG = "STATE_MACHINE_TASK";
+
+static const char *SSID_KEY = "wifi_ssid";
+static const char *PASSWORD_KEY = "wifi_password";
 
 static GenericTask sm_task;
 static httpd_handle_t sm_http_server = NULL;
@@ -83,10 +87,32 @@ static void state_machine_enter_state(eAppState_t new_state)
     }
 
 #ifdef DEBUG_MODE
-    wifi_set_sta_credentials("OctopusChurch", "BishopNemo");
-#else
-    wifi_set_ap_mode();
+    file_system_write_string(SSID_KEY, "OctopusChurch");
+    file_system_write_string(PASSWORD_KEY, "BishopNemo");
 #endif
+
+    // Attempt to read WiFi credentials from file system
+    char *ssid = file_system_read_string(SSID_KEY);
+    char *password = file_system_read_string(PASSWORD_KEY);
+
+    ESP_LOGI(TAG, "Read WiFi credentials from file system. SSID=%s, Password=%s", ssid, password);
+
+    if (ssid == NULL || password == NULL)
+    {
+      ESP_LOGW(TAG, "WiFi credentials not found in file system. Staying in IDLE state.");
+
+      // Set up Access Point mode for provisioning
+      wifi_set_ap_mode();
+    }
+    else
+    {
+      ESP_LOGI(TAG, "WiFi credentials found. Attempting to connect to WiFi in STA mode.");
+
+      wifi_set_sta_credentials(ssid, password);
+    }
+
+    free(ssid);
+    free(password);
     break;
 
   case STATE_PROVISIONING:
@@ -108,6 +134,15 @@ static void state_machine_enter_state(eAppState_t new_state)
       http_stop_webserver(sm_http_server);
       sm_http_server = NULL;
     }
+
+    // Save WiFi credentials to file system
+    WifiCredentials_t credentials = wifi_get_current_credentials();
+
+    ESP_LOGI(TAG, "Saving WiFi credentials to file system. SSID=%s, Password=%s", credentials.ssid, credentials.password);
+
+    file_system_write_string(SSID_KEY, (char *)credentials.ssid);
+    file_system_write_string(PASSWORD_KEY, (char *)credentials.password);
+
     wifi_ping("airgahux2exxu-ats.iot.us-east-1.amazonaws.com");
     break;
 

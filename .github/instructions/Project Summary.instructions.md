@@ -77,4 +77,4 @@ This firmware targets ESP32 devices, integrating AWS IoT services using the ESP-
 
 ---
 
-When generating code, answering questions, or reviewing changes, always consider the embedded systems context, resource constraints, and AWS IoT integration patterns specific to this project.
+When generating code, answering questions, or reviewing changes, always consider the embedded systems context, resource constraints, and AWS IoT integration patterns specific to this project. Keep answers shorter.

@@ -19,6 +19,17 @@ extern "C"
 #include "freertos/FreeRTOS.h"
 #include "message_types.h"
 
+/** @enum eAppState_t
+ *  @brief State Machine Application States
+ */
+typedef enum
+{
+  STATE_IDLE,
+  STATE_PROVISIONING,
+  STATE_WIFI_CONNECTED,
+  STATE_AWS_IOT_CONNECTED
+} eAppState_t;
+
 /**
  * @brief Initialize and start the State Machine task
  * 
@@ -50,6 +61,11 @@ void state_machine_task_init(void);
  * @note Thread-safe: Can be called from multiple tasks concurrently
  */
 BaseType_t state_machine_post_event(eAppMsgType_t type, eAppMsgSource_t source);
+
+/** @brief Get the current application state
+ *  @return Current application state
+ */
+eAppState_t state_machine_get_current_app_state(void);
 
 #ifdef __cplusplus
 }

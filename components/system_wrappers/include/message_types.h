@@ -13,6 +13,9 @@ extern "C"
 #define MAX_PASSPHRASE_LEN  64
 #define MAX_HOSTNAME_LEN    64
 
+static const char *NVS_SSID_KEY = "wifi_ssid";
+static const char *NVS_PASSWORD_KEY = "wifi_password";
+
 /** @enum eAppMsgType_t
  *  @brief System-wide application message types
  */

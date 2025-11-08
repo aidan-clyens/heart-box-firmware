@@ -14,21 +14,7 @@
 #define STATE_MACHINE_TASK_STACK_SIZE 4096
 #define STATE_MACHINE_TASK_PRIORITY   15
 
-/** @enum eAppState_t
- *  @brief State Machine Application States
- */
-typedef enum
-{
-  STATE_IDLE,
-  STATE_PROVISIONING,
-  STATE_WIFI_CONNECTED,
-  STATE_AWS_IOT_CONNECTED
-} eAppState_t;
-
 static const char *TAG = "STATE_MACHINE_TASK";
-
-static const char *SSID_KEY = "wifi_ssid";
-static const char *PASSWORD_KEY = "wifi_password";
 
 static GenericTask sm_task;
 static httpd_handle_t sm_http_server = NULL;
@@ -47,6 +33,14 @@ BaseType_t state_machine_post_event(eAppMsgType_t type, eAppMsgSource_t source)
   }
   AppMsg_t app_msg = {.type = type, .source = source};
   return generic_task_post_msg(&sm_task, &app_msg, sm_task.item_size);
+}
+
+/** @brief Get the current application state
+ *  @return Current application state
+ */
+eAppState_t state_machine_get_current_app_state(void)
+{
+  return current_state;
 }
 
 /** @brief Convert state enum to string
@@ -70,6 +64,63 @@ static const char *state_machine_state_to_string(eAppState_t state)
   }
 }
 
+/** @brief Convert message type enum for events to string
+ *  @param msg_type Message type enum
+ *  @return String representation of the event message type name
+ */
+static const char *state_machine_event_to_string(eAppMsgType_t msg_type)
+{
+  switch (msg_type)
+  {
+    case APP_EVT_WIFI_CONNECTED:
+      return "EVT_WIFI_CONNECTED";
+    case APP_EVT_WIFI_DISCONNECTED:
+      return "EVT_WIFI_DISCONNECTED";
+    case APP_EVT_AP_STARTED:
+      return "EVT_AP_STARTED";
+    case APP_EVT_PING_SUCCESS:
+      return "EVT_PING_SUCCESS";
+    case APP_EVT_PING_TIMEOUT:
+      return "EVT_PING_TIMEOUT";
+    case APP_GPIO_EVT_BUTTON_PRESSED:
+      return "GPIO_EVT_BUTTON_PRESSED";
+    case APP_GPIO_EVT_BUTTON_RELEASED:
+      return "GPIO_EVT_BUTTON_RELEASED";
+    case APP_AWS_IOT_EVT_CONNECTED:
+      return "AWS_IOT_EVT_CONNECTED";
+    case APP_AWS_IOT_EVT_DISCONNECTED:
+      return "AWS_IOT_EVT_DISCONNECTED";
+    case APP_AWS_IOT_EVT_MSG_PRESSED:
+      return "AWS_IOT_EVT_MSG_PRESSED";
+    case APP_AWS_IOT_EVT_MSG_RELEASED:
+      return "AWS_IOT_EVT_MSG_RELEASED";
+    case APP_MSG_NONE:
+    default:
+      return "MSG_NONE";
+  }
+}
+
+/** @brief Convert source enum to string
+ *  @param source Source enum
+ *  @return String representation of the source name
+ */
+static const char *state_machine_source_to_string(eAppMsgSource_t source)
+{
+  switch (source)
+  {
+    case APP_SM:
+      return "SM";
+    case APP_WIFI:
+      return "WIFI";
+    case APP_GPIO:
+      return "GPIO";
+    case APP_AWS_IOT:
+      return "AWS_IOT";
+    default:
+      return "UNKNOWN";
+  }
+}
+
 /** @brief Transition to a new state
  *  @param new_state New state
  */
@@ -87,26 +138,25 @@ static void state_machine_enter_state(eAppState_t new_state)
     }
 
 #ifdef DEBUG_MODE
-    file_system_write_string(SSID_KEY, "OctopusChurch");
-    file_system_write_string(PASSWORD_KEY, "BishopNemo");
+    file_system_write_string(NVS_SSID_KEY, "OctopusChurch");
+    file_system_write_string(NVS_PASSWORD_KEY, "BishopNemo");
 #endif
 
     // Attempt to read WiFi credentials from file system
-    char *ssid = file_system_read_string(SSID_KEY);
-    char *password = file_system_read_string(PASSWORD_KEY);
-
-    ESP_LOGI(TAG, "Read WiFi credentials from file system. SSID=%s, Password=%s", ssid, password);
-
+    char *ssid = file_system_read_string(NVS_SSID_KEY);
+    char *password = file_system_read_string(NVS_PASSWORD_KEY);
+    
     if (ssid == NULL || password == NULL)
     {
-      ESP_LOGW(TAG, "WiFi credentials not found in file system. Staying in IDLE state.");
-
+      ESP_LOGW(TAG, "WiFi credentials not found in file system. Changing to PROVISIONING state.");
+      
       // Set up Access Point mode for provisioning
       wifi_set_ap_mode();
     }
     else
     {
-      ESP_LOGI(TAG, "WiFi credentials found. Attempting to connect to WiFi in STA mode.");
+      ESP_LOGI(TAG, "Read WiFi credentials from file system. SSID=%s, Password=%s", ssid, password);
+      ESP_LOGI(TAG, "Attempting to connect to WiFi in STA mode.");
 
       wifi_set_sta_credentials(ssid, password);
     }
@@ -140,8 +190,8 @@ static void state_machine_enter_state(eAppState_t new_state)
 
     ESP_LOGI(TAG, "Saving WiFi credentials to file system. SSID=%s, Password=%s", credentials.ssid, credentials.password);
 
-    file_system_write_string(SSID_KEY, (char *)credentials.ssid);
-    file_system_write_string(PASSWORD_KEY, (char *)credentials.password);
+    file_system_write_string(NVS_SSID_KEY, (char *)credentials.ssid);
+    file_system_write_string(NVS_PASSWORD_KEY, (char *)credentials.password);
 
     wifi_ping("airgahux2exxu-ats.iot.us-east-1.amazonaws.com");
     break;
@@ -173,7 +223,7 @@ static void state_machine_on_message(GenericTask *self, void *msg_buf, size_t ms
   eAppMsgSource_t source = app_msg->source;
   eAppMsgType_t event = app_msg->type;
 
-  ESP_LOGI(TAG, "Received message (type: %d) from %d", event, source);
+  ESP_LOGI(TAG, "Received message (type: %s) from %s", state_machine_event_to_string(event), state_machine_source_to_string(source));
 
   switch (current_state)
   {
@@ -196,7 +246,7 @@ static void state_machine_on_message(GenericTask *self, void *msg_buf, size_t ms
     }
     else
     {
-      ESP_LOGW(TAG, "Unexpected event %d in STATE_IDLE", event);
+      ESP_LOGW(TAG, "Unexpected event %s in STATE_IDLE", state_machine_event_to_string(event));
     }
     break;
 
@@ -209,7 +259,7 @@ static void state_machine_on_message(GenericTask *self, void *msg_buf, size_t ms
     }
     else
     {
-      ESP_LOGW(TAG, "Unexpected event %d in STATE_PROVISIONING", event);
+      ESP_LOGW(TAG, "Unexpected event %s in STATE_PROVISIONING", state_machine_event_to_string(event));
     }
     break;
 
@@ -240,7 +290,7 @@ static void state_machine_on_message(GenericTask *self, void *msg_buf, size_t ms
     }
     else
     {
-      ESP_LOGW(TAG, "Unexpected event %d in STATE_WIFI_CONNECTED", event);
+      ESP_LOGW(TAG, "Unexpected event %s in STATE_WIFI_CONNECTED", state_machine_event_to_string(event));
     }
     break;
 
@@ -281,7 +331,7 @@ static void state_machine_on_message(GenericTask *self, void *msg_buf, size_t ms
     }
     else
     {
-      ESP_LOGW(TAG, "Unexpected event %d in STATE_AWS_IOT_CONNECTED", event);
+      ESP_LOGW(TAG, "Unexpected event %s in STATE_AWS_IOT_CONNECTED", state_machine_event_to_string(event));
     }
     break;
   }

@@ -257,6 +257,10 @@ static void state_machine_on_message(GenericTask *self, void *msg_buf, size_t ms
       current_state = STATE_WIFI_CONNECTED;
       state_machine_enter_state(current_state);
     }
+    else if (event == APP_EVT_WIFI_DISCONNECTED)
+    {
+      ESP_LOGI(TAG, "WiFi connection attempt failed in PROVISIONING state... Remaining in PROVISIONING state");
+    }
     else
     {
       ESP_LOGW(TAG, "Unexpected event %s in STATE_PROVISIONING", state_machine_event_to_string(event));

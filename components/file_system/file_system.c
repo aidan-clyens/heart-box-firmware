@@ -40,6 +40,12 @@ void file_system_init(void)
 
 void file_system_write_string(const char *key, const char *data)
 {
+  if (key == NULL || data == NULL)
+  {
+    ESP_LOGE(TAG, "Key or data is NULL");
+    return;
+  }
+
   ESP_LOGI(TAG, "Writing string to NVS. Key=%s, Data=%s", key, data);
 
   nvs_handle_t my_handle;
@@ -64,6 +70,12 @@ void file_system_write_string(const char *key, const char *data)
 
 char *file_system_read_string(const char *key)
 {
+  if (key == NULL)
+  {
+    ESP_LOGE(TAG, "Key is NULL");
+    return NULL;
+  }
+
   ESP_LOGI(TAG, "Reading string from NVS. Key=%s", key);
 
   nvs_handle_t my_handle;
@@ -96,4 +108,30 @@ char *file_system_read_string(const char *key)
 
   nvs_close(my_handle);
   return message;
+}
+
+void file_system_clear(const char *key)
+{
+  if (key == NULL)
+  {
+    ESP_LOGE(TAG, "Key is NULL");
+    return;
+  }
+
+  nvs_handle_t my_handle;
+  esp_err_t err;
+
+  file_system_open_handle(&my_handle, NVS_READWRITE);
+
+  err = nvs_erase_key(my_handle, key);
+  if (err != ESP_OK)
+  {
+    ESP_LOGE(TAG, "Error erasing key %s from NVS: %s", key, esp_err_to_name(err));
+  }
+  else
+  {
+    ESP_LOGI(TAG, "Erased key %s from NVS", key);
+  }
+
+  nvs_close(my_handle);
 }

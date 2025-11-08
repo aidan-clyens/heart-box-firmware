@@ -1,4 +1,4 @@
-idf_component_register(SRCS "test_app_main.c" "test_state_machine_task.c"
+idf_component_register(SRCS "test_app_main.c" "test_file_system.c" "test_state_machine_task.c"
                        INCLUDE_DIRS ""
                        REQUIRES
                             unity

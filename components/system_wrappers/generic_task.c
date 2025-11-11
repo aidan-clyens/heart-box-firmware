@@ -62,3 +62,27 @@ void generic_task_start(GenericTask *task, uint32_t stack_size, UBaseType_t prio
 
   xTaskCreate(generic_task_loop, task->name, stack_size, task, priority, &task->handle);
 }
+
+void generic_task_stop(GenericTask *task)
+{
+  if (task->on_stop)
+  {
+    task->on_stop(task);
+  }
+
+  if (task->handle != NULL)
+  {
+    vTaskDelete(task->handle);
+    task->handle = NULL;
+  }
+  if (task->queue != NULL)
+  {
+    vQueueDelete(task->queue);
+    task->queue = NULL;
+  }
+}
+
+bool generic_task_is_running(GenericTask *task)
+{
+  return (task->handle != NULL);
+}

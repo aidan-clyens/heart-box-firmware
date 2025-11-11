@@ -264,6 +264,15 @@ static void wifi_on_init(GenericTask *self)
                                       &wifi_event_handler, NULL, &instance_got_ip);
 }
 
+/** @brief Deinitialize WiFi
+ *  @param self Pointer to the generic task object for the WiFi task
+*/
+static void wifi_on_stop(GenericTask *self)
+{
+  esp_wifi_stop();
+  esp_wifi_deinit();
+}
+
 /** @brief WiFi Task message handler
  *  @param self Pointer to the generic task object for the WiFi task
  *  @param msg_buf The message buffer queue for this task
@@ -316,9 +325,26 @@ static void wifi_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
 /** @brief Create WiFi Task */
 void wifi_task_init(void)
 {
+  ESP_LOGI(TAG_WIFI, "Starting WiFi task...");
   wifi_task.name = TAG_WIFI;
   wifi_task.on_init = wifi_on_init;
+  wifi_task.on_stop = wifi_on_stop;
   wifi_task.on_message = wifi_on_message;
   wifi_task.item_size = sizeof(WifiMsg_t);
   generic_task_start(&wifi_task, 4096, 10);
+}
+
+/** @brief Stop WiFi Task */
+void wifi_task_stop(void)
+{
+  ESP_LOGI(TAG_WIFI, "Stopping WiFi task...");
+  generic_task_stop(&wifi_task);
+}
+
+/** @brief Check if the WiFi task is running
+ *  @return true if running, false otherwise
+ */
+bool wifi_task_is_running(void)
+{
+  return generic_task_is_running(&wifi_task);
 }

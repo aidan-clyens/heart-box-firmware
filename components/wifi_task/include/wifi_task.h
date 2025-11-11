@@ -10,12 +10,18 @@ extern "C" {
 
 #include "message_types.h"
 
-/** @brief Initialize and start the WiFi task
- */
+/** @brief Initialize and start the WiFi task */
 void wifi_task_init(void);
 
-/** @brief Request WiFi AP mode
+/** @brief Stop the WiFi task */
+void wifi_task_stop(void);
+
+/** @brief Check if the WiFi task is running
+ *  @return true if running, false otherwise
  */
+bool wifi_task_is_running(void);
+
+/** @brief Request WiFi AP mode */
 void wifi_set_ap_mode(void);
 
 /** @brief Set WiFi credentials for STA mode

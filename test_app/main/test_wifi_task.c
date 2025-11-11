@@ -31,9 +31,20 @@ TEST_TEAR_DOWN(wifi_task)
 TEST(wifi_task, initialize_task)
 {
   file_system_init();
+
+  if (wifi_task_is_running())
+  {
+    wifi_task_stop();
+    vTaskDelay(pdMS_TO_TICKS(100)); // Allow some time for task to stop
+  }
+
+  TEST_ASSERT_FALSE(wifi_task_is_running());
+
   wifi_task_init();
 
   vTaskDelay(pdMS_TO_TICKS(500)); // Allow some time for task to initialize
+
+  TEST_ASSERT_TRUE(wifi_task_is_running());
 
   TEST_ASSERT_FALSE(wifi_task_is_started());
   TEST_ASSERT_FALSE(wifi_task_is_connected());

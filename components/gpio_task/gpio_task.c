@@ -10,11 +10,16 @@
 
 #define DEBUG
 
+#define GPIO_HIGH 1
+#define GPIO_LOW 0
+
 static const char *TAG_GPIO = "GPIO_TASK";
 
 static GenericTask gpio_task;
 static SemaphoreHandle_t gpio_button_semaphore = NULL;
 static TimerHandle_t gpio_blink_timer = NULL;
+
+static int gpio_status_led_current_level = GPIO_LOW;
 
 /** @brief Post a command message to the GPIO task
  *  @param msg The command message to post
@@ -24,7 +29,7 @@ BaseType_t gpio_post_msg(GpioMsg_t msg)
   return generic_task_post_msg(&gpio_task, &msg, sizeof(GpioMsg_t));
 }
 
-/** @brief Change the state of the GPIO status LED
+/** @brief Public API: Change the state of the GPIO status LED
  *  @param state The state to change to
  */
 void gpio_set_state(eGpioState_t state)
@@ -33,13 +38,30 @@ void gpio_set_state(eGpioState_t state)
   gpio_post_msg(msg);
 }
 
+/** @brief Public API: Get the current level of the status LED
+ *  @return The current level of the status LED (0 = OFF, 1 = ON)
+ */
+unsigned int gpio_get_status_led_level(void)
+{
+  return gpio_status_led_current_level;
+}
+
+/** @brief Set the status LED to ON or OFF
+ *  @param level The level to set (0 = OFF, 1 = ON)
+ */
+static void gpio_set_status_led_level(int level)
+{
+  gpio_status_led_current_level = level;
+  gpio_set_level(LED_STATUS_PIN_2, gpio_status_led_current_level);
+}
+
 /** @brief Blink the status LED at a periodic interval
  *  @param xTimer
  */
 static void gpio_blink_timer_cb(TimerHandle_t xTimer)
 {
   static bool on = false;
-  gpio_set_level(LED_STATUS_PIN_2, on);
+  gpio_set_status_led_level(on ? GPIO_HIGH : GPIO_LOW);
   on = !on;
 }
 
@@ -151,7 +173,7 @@ static void gpio_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
       {
         xTimerStop(gpio_blink_timer, 0);
       }
-      gpio_set_level(LED_STATUS_PIN_2, 1);
+      gpio_set_status_led_level(GPIO_HIGH);
       break;
 
     case GPIO_STATE_LED_BLINK:
@@ -172,7 +194,7 @@ static void gpio_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
       {
         xTimerStop(gpio_blink_timer, 0);
       }
-      gpio_set_level(LED_STATUS_PIN_2, 0);
+      gpio_set_status_led_level(GPIO_LOW);
       break;
     }
     break;

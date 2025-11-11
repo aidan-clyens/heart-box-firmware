@@ -27,6 +27,11 @@ void gpio_task_init(void);
  */
 void gpio_set_state(eGpioState_t state);
 
+/** @brief Get the current level of the status LED
+ *  @return The current level of the status LED (0 = OFF, 1 = ON)
+ */
+unsigned int gpio_get_status_led_level(void);
+
 #ifdef __cplusplus
 }
 #endif

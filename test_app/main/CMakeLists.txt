@@ -1,4 +1,5 @@
 idf_component_register(SRCS "test_app_main.c" "test_file_system.c" "test_state_machine_task.c"
+                       "test_gpio_task.c"
                        INCLUDE_DIRS ""
                        REQUIRES
                             unity
@@ -9,7 +10,6 @@ idf_component_register(SRCS "test_app_main.c" "test_file_system.c" "test_state_m
                             file_system
                             system_wrappers
                        WHOLE_ARCHIVE)
-
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
   MQTT_CLIENT_IDENTIFIER="${DEVICE_NAME}"
   MQTT_TOPIC="${TOPIC_NAME}"

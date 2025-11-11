@@ -7,6 +7,15 @@
 #include "aws_iot_task.h"
 #include "state_machine_task.h"
 
+
+#ifndef TEST_WIFI_SSID
+#error "TEST_WIFI_SSID must be defined for these tests to run"
+#endif
+
+#ifndef TEST_WIFI_PASSWORD
+#error "TEST_WIFI_PASSWORD must be defined for these tests to run"
+#endif
+
 // Test group setup
 TEST_GROUP(state_machine_task);
 TEST_SETUP(state_machine_task)
@@ -59,7 +68,7 @@ TEST(state_machine_task, set_invalid_wifi_credentials_in_provisioning)
 TEST(state_machine_task, set_valid_wifi_credentials_in_provisioning)
 {
   // Simulate setting valid WiFi credentials
-  wifi_set_sta_credentials("OctopusChurch", "BishopNemo");
+  wifi_set_sta_credentials(TEST_WIFI_SSID, TEST_WIFI_PASSWORD);
 
   // Wait for WiFi connection
   vTaskDelay(pdMS_TO_TICKS(10000));
@@ -97,11 +106,18 @@ TEST(state_machine_task, wifi_disconnected)
   wifi_set_sta_credentials("invalid_ssid", "invalid_password");
 
   // Wait for state machine to process the event
-  vTaskDelay(pdMS_TO_TICKS(5000));
+  vTaskDelay(pdMS_TO_TICKS(1000));
 
   // Check the current state
   eAppState_t state = state_machine_get_current_app_state();
   TEST_ASSERT_EQUAL(STATE_IDLE, state);
+
+  // Wait for reconnection attempts
+  vTaskDelay(pdMS_TO_TICKS(5000));
+
+  // Check the current state
+  state = state_machine_get_current_app_state();
+  TEST_ASSERT_EQUAL(STATE_AWS_IOT_CONNECTED, state);
 }
 
 TEST_GROUP_RUNNER(state_machine_task)

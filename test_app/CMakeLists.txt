@@ -6,6 +6,9 @@ set(DEVICE_NAME "Test")
 set(TOPIC_NAME "")
 set(AWS_IOT_ENDPOINT "")
 
+set(TEST_WIFI_SSID "")
+set(TEST_WIFI_PASSWORD "")
+
 set(ROOT_PATH "${CMAKE_CURRENT_LIST_DIR}/..")
 set(AWS_IOT_PATH "${ROOT_PATH}/components/esp-aws-iot")
 set(CERTS_PATH "${ROOT_PATH}/certs/${DEVICE_NAME}")
@@ -25,6 +28,8 @@ project(HeartBoxFirmwareTestApp)
 add_definitions(-DDEVICE_NAME="${DEVICE_NAME}")
 add_definitions(-DTOPIC_NAME="${TOPIC_NAME}")
 add_definitions(-DAWS_IOT_ENDPOINT="${AWS_IOT_ENDPOINT}")
+add_definitions(-DTEST_WIFI_SSID="${TEST_WIFI_SSID}")
+add_definitions(-DTEST_WIFI_PASSWORD="${TEST_WIFI_PASSWORD}")
 
 idf_build_set_property(MINIMAL_BUILD ON)
 

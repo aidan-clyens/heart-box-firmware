@@ -6,6 +6,7 @@ extern "C" {
 #endif
 
 #include "freertos/FreeRTOS.h"
+#include "esp_wifi_types_generic.h"
 
 #include "message_types.h"
 
@@ -32,6 +33,11 @@ WifiCredentials_t wifi_get_current_credentials(void);
  *  @param hostname     IPv4 or URL for external host
  */
 void wifi_ping(const char *hostname);
+
+bool wifi_task_is_started(void);
+bool wifi_task_is_connected(void);
+
+wifi_mode_t wifi_get_mode(void);
 
 #ifdef __cplusplus
 }

@@ -77,6 +77,32 @@ void wifi_ping(const char *hostname)
   wifi_post_msg(msg);
 }
 
+/** @brief Public API: Check if WiFi is started
+ *  @return true if WiFi is started, false otherwise
+ */
+bool wifi_task_is_started(void)
+{
+  return is_wifi_started;
+}
+
+/** @brief Public API: Check if WiFi is connected
+ *  @return true if WiFi is connected, false otherwise
+ */
+bool wifi_task_is_connected(void)
+{
+  return is_wifi_connected;
+}
+
+/** @brief Public API: Get the current WiFi mode
+ *  @return Current WiFi mode
+ */
+wifi_mode_t wifi_get_mode(void)
+{
+  wifi_mode_t mode;
+  esp_wifi_get_mode(&mode);
+  return mode;
+}
+
 /** @brief Event handler for WiFi and IP events
  *  @param arg
  *  @param event_base
@@ -91,11 +117,13 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
     switch (event_id)
     {
     case WIFI_EVENT_STA_START:
+      ESP_LOGI(TAG_WIFI, "Received event - WIFI_EVENT_STA_START");
       is_wifi_started = true;
       esp_wifi_connect();
       break;
 
     case WIFI_EVENT_STA_DISCONNECTED:
+      ESP_LOGI(TAG_WIFI, "Received event - WIFI_EVENT_STA_DISCONNECTED");
       is_wifi_connected = false;
       if (++wifi_connect_retries >= 5)
       {
@@ -110,17 +138,20 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
       break;
 
     case WIFI_EVENT_AP_START:
+      ESP_LOGI(TAG_WIFI, "Received event - WIFI_EVENT_AP_START");
       is_wifi_started = true;
       state_machine_post_event(APP_EVT_AP_STARTED, APP_WIFI);
       break;
 
     case WIFI_EVENT_AP_STOP:
+      ESP_LOGI(TAG_WIFI, "Received event - WIFI_EVENT_AP_STOP");
       is_wifi_started = false;
       break;
     }
   }
   else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP)
   {
+    ESP_LOGI(TAG_WIFI, "Received event - IP_EVENT_STA_GOT_IP");
     is_wifi_connected = true;
     wifi_connect_retries = 0;
     state_machine_post_event(APP_EVT_WIFI_CONNECTED, APP_WIFI);
@@ -250,6 +281,7 @@ static void wifi_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
   switch (msg->type)
   {
   case APP_WIFI_CMD_MODE_AP:
+    ESP_LOGI(TAG_WIFI, "Received command - APP_WIFI_CMD_MODE_AP");
     if (is_wifi_connected)
       esp_wifi_disconnect();
     if (is_wifi_started)
@@ -260,6 +292,7 @@ static void wifi_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
     break;
 
   case APP_WIFI_CMD_SET_STA_CREDENTIALS:
+    ESP_LOGI(TAG_WIFI, "Received command - APP_WIFI_CMD_SET_STA_CREDENTIALS");
     if (is_wifi_connected)
       esp_wifi_disconnect();
     if (is_wifi_started)
@@ -271,6 +304,7 @@ static void wifi_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
     break;
 
   case APP_WIFI_CMD_PING:
+    ESP_LOGI(TAG_WIFI, "Received command - APP_WIFI_CMD_PING");
     wifi_ping_start(msg->data.host);
     break;
 

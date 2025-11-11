@@ -34,9 +34,19 @@ WifiCredentials_t wifi_get_current_credentials(void);
  */
 void wifi_ping(const char *hostname);
 
+/** @brief Public API: Check if WiFi is started
+ *  @return true if WiFi is started, false otherwise
+ */
 bool wifi_task_is_started(void);
+
+/** @brief Public API: Check if WiFi is connected to an AP
+ *  @return true if connected, false otherwise
+ */
 bool wifi_task_is_connected(void);
 
+/** @brief Public API: Get the current WiFi mode
+ *  @return Current WiFi mode
+ */
 wifi_mode_t wifi_get_mode(void);
 
 #ifdef __cplusplus

@@ -17,6 +17,11 @@ static SemaphoreHandle_t gpio_button_semaphore = NULL;
 static TimerHandle_t gpio_blink_timer = NULL;
 
 static int gpio_status_led_current_level = GPIO_LOW;
+static int gpio_output_led_current_level = GPIO_LOW;
+
+#ifdef DEBUG_GPIO_BUTTON_ISR
+static int gpio_simulated_button_level = GPIO_LOW;
+#endif
 
 /** @brief Post a command message to the GPIO task
  *  @param msg The command message to post
@@ -43,6 +48,21 @@ unsigned int gpio_get_status_led_level(void)
   return gpio_status_led_current_level;
 }
 
+/** @brief Public API: Get the current level of the output LED
+ *  @return The current level of the output LED (0 = LOW, 1 = HIGH)
+ */
+unsigned int gpio_get_output_led_level(void)
+{
+  return gpio_output_led_current_level;
+}
+
+#ifdef DEBUG_GPIO_BUTTON_ISR
+void gpio_set_button_level(int level)
+{
+  gpio_simulated_button_level = level;
+}
+#endif
+
 /** @brief Set the status LED to ON or OFF
  *  @param level The level to set (0 = OFF, 1 = ON)
  */
@@ -51,6 +71,15 @@ static void gpio_set_status_led_level(int level)
   gpio_status_led_current_level = level;
   ESP_LOGI(TAG_GPIO, "Setting Status LED level to %s", level == GPIO_HIGH ? "HIGH" : "LOW");
   gpio_set_level(LED_STATUS_PIN_2, gpio_status_led_current_level);
+}
+
+static int gpio_get_button_level()
+{
+#ifdef DEBUG_GPIO_BUTTON_ISR
+  return gpio_simulated_button_level;
+#else
+  return gpio_get_level(BUTTON_PIN);
+#endif
 }
 
 /** @brief Blink the status LED at a periodic interval
@@ -74,6 +103,15 @@ static void IRAM_ATTR gpio_isr_handler(void *arg)
     portYIELD_FROM_ISR();
   }
 }
+
+#ifdef DEBUG_GPIO_BUTTON_ISR
+/** @brief Public API: Simulate a button press ISR for testing purposes */
+void gpio_simulate_button_press_isr(void)
+{
+  BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+  xSemaphoreGiveFromISR(gpio_button_semaphore, &xHigherPriorityTaskWoken);
+}
+#endif
 
 /** @brief Initialize GPIO hardware
  */
@@ -118,8 +156,6 @@ static void gpio_button_task(void *args)
 {
   ESP_LOGI(TAG_GPIO, "GPIO Button Task Started");
 
-  int button_level = 0;
-
   while (true)
   {
 #ifdef DEBUG
@@ -134,11 +170,11 @@ static void gpio_button_task(void *args)
     {
       gpio_intr_disable(BUTTON_PIN);
 
-      vTaskDelay(BUTTON_DEBOUNCE_TIME_MS / portTICK_PERIOD_MS);
+      vTaskDelay(pdMS_TO_TICKS(BUTTON_DEBOUNCE_TIME_MS));
 
-      button_level = gpio_get_level(BUTTON_PIN);
-      ESP_LOGI(TAG_GPIO, "Button level: %d", button_level);
-      gpio_set_level(HEART_LED_ARRAY_PIN, button_level);
+      gpio_output_led_current_level = gpio_get_button_level();
+      ESP_LOGI(TAG_GPIO, "Received Push Button Event - Button level: %d", gpio_output_led_current_level);
+      gpio_set_level(HEART_LED_ARRAY_PIN, gpio_output_led_current_level);
 
       // Notify state machine
       state_machine_post_event(APP_GPIO_EVT_BUTTON_PRESSED, APP_GPIO);

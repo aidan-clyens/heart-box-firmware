@@ -1,6 +1,8 @@
 #include "unity.h"
 #include "unity_fixture.h"
 
+#include "script_helpers.h"
+
 // Include the component header
 #include "wifi_task.h"
 #include "file_system.h"
@@ -23,6 +25,11 @@ TEST_SETUP(wifi_task)
 TEST_TEAR_DOWN(wifi_task)
 {
   // Teardown code here
+}
+
+TEST(wifi_task, setup)
+{
+  stop_all_tasks();
 }
 
 /** @brief Test: Initialize WiFi task
@@ -130,6 +137,7 @@ TEST(wifi_task, change_to_ap_mode)
 
 TEST_GROUP_RUNNER(wifi_task)
 {
+  RUN_TEST_CASE(wifi_task, setup);
   RUN_TEST_CASE(wifi_task, initialize_task);
   RUN_TEST_CASE(wifi_task, start_ap_mode);
   RUN_TEST_CASE(wifi_task, start_sta_mode_invalid_credentials);

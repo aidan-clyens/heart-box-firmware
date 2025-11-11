@@ -185,6 +185,26 @@ static void gpio_button_task(void *args)
   }
 }
 
+static void gpio_on_init(GenericTask *self)
+{
+  // No initialization needed
+}
+
+static void gpio_on_stop(GenericTask *self)
+{
+  if (gpio_blink_timer != NULL)
+  {
+    xTimerDelete(gpio_blink_timer, 0);
+    gpio_blink_timer = NULL;
+  }
+
+  // Uninstall ISR service
+  gpio_isr_handler_remove(BUTTON_PIN);
+  gpio_uninstall_isr_service();
+
+  gpio_set_status_led_level(GPIO_LOW);
+}
+
 /** @brief GPIO Task message handler
  *  @param self    Pointer to the GenericTask
  *  @param msg_buf Pointer to the received message buffer
@@ -255,8 +275,19 @@ void gpio_task_init(void)
 
   // Status task uses GenericTask with queue
   gpio_task.name = TAG_GPIO;
-  gpio_task.on_init = NULL;
+  gpio_task.on_init = gpio_on_init;
+  gpio_task.on_stop = gpio_on_stop;
   gpio_task.on_message = gpio_on_message;
   gpio_task.item_size = sizeof(GpioMsg_t);
   generic_task_start(&gpio_task, 2048, 10);
+}
+
+void gpio_task_stop(void)
+{
+  generic_task_stop(&gpio_task);
+}
+
+bool gpio_task_is_running(void)
+{
+  return generic_task_is_running(&gpio_task);
 }

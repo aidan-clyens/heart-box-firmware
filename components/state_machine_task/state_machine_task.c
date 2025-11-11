@@ -205,6 +205,22 @@ static void state_machine_enter_state(eAppState_t new_state)
   }
 }
 
+static void state_machine_on_init(GenericTask *self)
+{
+  (void)self; // Not used
+}
+
+static void state_machine_on_stop(GenericTask *self)
+{
+  (void)self; // Not used
+
+  if (sm_http_server)
+  {
+    http_stop_webserver(sm_http_server);
+    sm_http_server = NULL;
+  }
+}
+
 /** @brief State Machine Task message handler
  *  @param self    Pointer to the GenericTask
  *  @param msg_buf Pointer to the received message buffer
@@ -346,7 +362,8 @@ static void state_machine_on_message(GenericTask *self, void *msg_buf, size_t ms
 void state_machine_task_init(void)
 {
   sm_task.name = TAG;
-  sm_task.on_init = NULL; // no special init
+  sm_task.on_init = state_machine_on_init;
+  sm_task.on_stop = state_machine_on_stop;
   sm_task.on_message = state_machine_on_message;
   sm_task.item_size = sizeof(AppMsg_t);
 
@@ -354,4 +371,14 @@ void state_machine_task_init(void)
   state_machine_enter_state(current_state);
 
   generic_task_start(&sm_task, STATE_MACHINE_TASK_STACK_SIZE, STATE_MACHINE_TASK_PRIORITY);
+}
+
+void state_machine_task_stop(void)
+{
+  generic_task_stop(&sm_task);
+}
+
+bool state_machine_task_is_running(void)
+{
+  return generic_task_is_running(&sm_task);
 }

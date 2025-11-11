@@ -6,8 +6,14 @@ extern "C"
 {
 #endif
 
+#include "freertos/FreeRTOS.h"
+
 /** @brief Initialize and start the AWS IoT task */
 void aws_iot_task_init(void);
+
+void aws_iot_task_stop(void);
+
+bool aws_iot_task_is_running(void);
 
 /** @brief Request a connection to the configured AWS IoT broker */
 void aws_iot_connect(void);

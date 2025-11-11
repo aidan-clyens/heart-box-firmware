@@ -1,12 +1,13 @@
 #include "unity.h"
 #include "unity_fixture.h"
 
+#include "script_helpers.h"
+
 #include "file_system.h"
 #include "gpio_task.h"
 #include "wifi_task.h"
 #include "aws_iot_task.h"
 #include "state_machine_task.h"
-
 
 #ifndef TEST_WIFI_SSID
 #error "TEST_WIFI_SSID must be defined for these tests to run"
@@ -24,6 +25,11 @@ TEST_SETUP(state_machine_task)
 
 TEST_TEAR_DOWN(state_machine_task)
 {
+}
+
+TEST(state_machine_task, setup)
+{
+  stop_all_tasks();
 }
 
 /** @brief Test: Initialize all tasks and clear WiFi credentials
@@ -122,6 +128,7 @@ TEST(state_machine_task, wifi_disconnected)
 
 TEST_GROUP_RUNNER(state_machine_task)
 {
+  RUN_TEST_CASE(state_machine_task, setup);
   RUN_TEST_CASE(state_machine_task, initialize_tasks);
   RUN_TEST_CASE(state_machine_task, initialize_no_wifi_credentials);
   RUN_TEST_CASE(state_machine_task, set_invalid_wifi_credentials_in_provisioning);

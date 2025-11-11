@@ -629,6 +629,22 @@ static void aws_iot_on_init(GenericTask *self)
   ESP_LOGI(TAG_AWS_IOT, "AWS IoT Task initialized successfully.");
 }
 
+static void aws_iot_on_stop(GenericTask *self)
+{
+  ESP_LOGI(TAG_AWS_IOT, "Stopping AWS IoT Task...");
+
+  // Disconnect MQTT if connected
+  if (mqtt_context.connectStatus == MQTTConnected)
+  {
+    MQTT_Disconnect(&mqtt_context);
+  }
+
+  // Disconnect TLS
+  xTlsDisconnect(&network_context);
+
+  ESP_LOGI(TAG_AWS_IOT, "AWS IoT Task stopped.");
+}
+
 /** @brief Handle messages for AWS IoT Task
  *  @param self Pointer to the generic task object for the AWS IoT task
  *  @param msg_buf The message buffer queue for this task
@@ -668,7 +684,18 @@ void aws_iot_task_init(void)
 {
   aws_iot_task.name = TAG_AWS_IOT;
   aws_iot_task.on_init = aws_iot_on_init;
+  aws_iot_task.on_stop = aws_iot_on_stop;
   aws_iot_task.on_message = aws_iot_on_message;
   aws_iot_task.item_size = sizeof(AwsIotMsg_t);
   generic_task_start(&aws_iot_task, MQTT_AWS_IOT_TASK_STACK_SIZE, 10);
+}
+
+void aws_iot_task_stop(void)
+{
+  generic_task_stop(&aws_iot_task);
+}
+
+bool aws_iot_task_is_running(void)
+{
+  return generic_task_is_running(&aws_iot_task);
 }

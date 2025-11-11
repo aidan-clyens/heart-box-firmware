@@ -23,6 +23,12 @@ static bool is_wifi_started = false;
 static bool is_wifi_connected = false;
 static int wifi_connect_retries = 0;
 
+static esp_event_handler_instance_t instance_any_id;
+static esp_event_handler_instance_t instance_got_ip;
+
+static esp_netif_t *sta_netif = NULL;
+static esp_netif_t *ap_netif = NULL;
+
 /** @brief Post a command message to the WiFi task */
 BaseType_t wifi_post_msg(WifiMsg_t msg)
 {
@@ -249,17 +255,15 @@ static void wifi_on_init(GenericTask *self)
 {
   esp_netif_init();
   esp_event_loop_create_default();
-  esp_netif_create_default_wifi_sta();
-  esp_netif_create_default_wifi_ap();
+  sta_netif = esp_netif_create_default_wifi_sta();
+  ap_netif = esp_netif_create_default_wifi_ap();
 
   wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
   esp_wifi_init(&cfg);
 
-  esp_event_handler_instance_t instance_any_id;
   esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID,
                                       &wifi_event_handler, NULL, &instance_any_id);
 
-  esp_event_handler_instance_t instance_got_ip;
   esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP,
                                       &wifi_event_handler, NULL, &instance_got_ip);
 }
@@ -269,8 +273,26 @@ static void wifi_on_init(GenericTask *self)
 */
 static void wifi_on_stop(GenericTask *self)
 {
+  esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, &instance_any_id);
+  esp_event_handler_instance_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, &instance_got_ip);
+
   esp_wifi_stop();
   esp_wifi_deinit();
+
+  if (sta_netif != NULL)
+  {
+    esp_netif_destroy(sta_netif);
+    sta_netif = NULL;
+  }
+
+  if (ap_netif != NULL)
+  {
+    esp_netif_destroy(ap_netif);
+    ap_netif = NULL;
+  }
+
+  esp_event_loop_delete_default();
+  esp_netif_deinit();
 }
 
 /** @brief WiFi Task message handler

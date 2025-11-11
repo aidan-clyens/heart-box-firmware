@@ -42,6 +42,10 @@ typedef enum
  */
 void state_machine_task_init(void);
 
+void state_machine_task_stop(void);
+
+bool state_machine_task_is_running(void);
+
 /**
  * @brief Post an event to the State Machine task
  * 

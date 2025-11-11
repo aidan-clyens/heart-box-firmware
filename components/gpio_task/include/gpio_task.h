@@ -30,6 +30,14 @@ extern "C"
 /** @brief Initialize and start the GPIO task */
 void gpio_task_init(void);
 
+/** @brief Stop the GPIO task */
+void gpio_task_stop(void);
+
+/** @brief Check if the GPIO task is running
+ *  @return true if the GPIO task is running, false otherwise
+ */
+bool gpio_task_is_running(void);
+
 /** @brief Change the state of the GPIO status LED
  *  @param state The state to change to
  */

@@ -3,6 +3,8 @@
 
 #include "esp_log.h"
 
+#include "script_helpers.h"
+
 // Include the component header
 #include "gpio_task.h"
 
@@ -18,6 +20,11 @@ TEST_SETUP(gpio_task)
 TEST_TEAR_DOWN(gpio_task)
 {
   // Teardown code here
+}
+
+TEST(gpio_task, setup)
+{
+  stop_all_tasks();
 }
 
 /** @brief Test: Initialize GPIO task
@@ -112,6 +119,7 @@ TEST(gpio_task, push_button_isr)
 
 TEST_GROUP_RUNNER(gpio_task)
 {
+  RUN_TEST_CASE(gpio_task, setup);
   RUN_TEST_CASE(gpio_task, initialize_task);
   RUN_TEST_CASE(gpio_task, led_solid);
   RUN_TEST_CASE(gpio_task, led_off);

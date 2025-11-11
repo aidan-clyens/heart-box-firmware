@@ -10,9 +10,6 @@
 
 #define DEBUG
 
-#define GPIO_HIGH 1
-#define GPIO_LOW 0
-
 static const char *TAG_GPIO = "GPIO_TASK";
 
 static GenericTask gpio_task;
@@ -52,6 +49,7 @@ unsigned int gpio_get_status_led_level(void)
 static void gpio_set_status_led_level(int level)
 {
   gpio_status_led_current_level = level;
+  ESP_LOGI(TAG_GPIO, "Setting Status LED level to %s", level == GPIO_HIGH ? "HIGH" : "LOW");
   gpio_set_level(LED_STATUS_PIN_2, gpio_status_led_current_level);
 }
 
@@ -107,6 +105,8 @@ static void gpio_initialize(void)
 
   gpio_install_isr_service(0);
   gpio_isr_handler_add(BUTTON_PIN, gpio_isr_handler, (void *)BUTTON_PIN);
+
+  ESP_LOGI(TAG_GPIO, "GPIO Initialized");
 }
 
 /** @brief GPIO Button Task
@@ -169,6 +169,7 @@ static void gpio_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
     switch (msg->data.state)
     {
     case GPIO_STATE_LED_SOLID:
+      ESP_LOGI(TAG_GPIO, "Received message: GPIO_STATE_LED_SOLID");
       if (gpio_blink_timer != NULL)
       {
         xTimerStop(gpio_blink_timer, 0);
@@ -177,10 +178,11 @@ static void gpio_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
       break;
 
     case GPIO_STATE_LED_BLINK:
+      ESP_LOGI(TAG_GPIO, "Received message: GPIO_STATE_LED_BLINK");
       if (gpio_blink_timer == NULL)
       {
         gpio_blink_timer = xTimerCreate("blink",
-                                        pdMS_TO_TICKS(1000),
+                                        pdMS_TO_TICKS(GPIO_LED_BLINK_INTERVAL_MS),
                                         pdTRUE,
                                         NULL,
                                         gpio_blink_timer_cb);
@@ -189,6 +191,7 @@ static void gpio_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
       break;
 
     case GPIO_STATE_LED_OFF:
+      ESP_LOGI(TAG_GPIO, "Received message: GPIO_STATE_LED_OFF");
     default:
       if (gpio_blink_timer != NULL)
       {

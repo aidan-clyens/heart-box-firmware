@@ -17,6 +17,12 @@ extern "C"
 #define LED_STATUS_PIN_2 GPIO_NUM_33
 #define BUTTON_PIN GPIO_NUM_25
 
+//  --- GPIO Level Definitions ---
+#define GPIO_HIGH 1
+#define GPIO_LOW 0
+
+//  --- Time Definitions ---
+#define GPIO_LED_BLINK_INTERVAL_MS 1000
 #define BUTTON_DEBOUNCE_TIME_MS 50
 
 /** @brief Initialize and start the GPIO task */

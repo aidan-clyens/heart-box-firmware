@@ -7,6 +7,9 @@
 
 // Include the component header
 #include "gpio_task.h"
+#include "generic_task.h"
+
+#define DELAY_TIME_MS 500
 
 static const char *TAG = "TEST_GPIO_TASK";
 
@@ -14,17 +17,14 @@ static const char *TAG = "TEST_GPIO_TASK";
 TEST_GROUP(gpio_task);
 TEST_SETUP(gpio_task)
 {
-  // Setup code here
+  TEST_ASSERT_EQUAL(ESP_OK, gpio_task_init());
+  vTaskDelay(pdMS_TO_TICKS(DELAY_TIME_MS));
 }
 
 TEST_TEAR_DOWN(gpio_task)
 {
-  // Teardown code here
-}
-
-TEST(gpio_task, setup)
-{
-  stop_all_tasks();
+  TEST_ASSERT_EQUAL(ESP_OK, gpio_task_deinit());
+  vTaskDelay(pdMS_TO_TICKS(DELAY_TIME_MS));
 }
 
 /** @brief Test: Initialize GPIO task
@@ -32,10 +32,6 @@ TEST(gpio_task, setup)
  */
 TEST(gpio_task, initialize_task)
 {
-  gpio_task_init();
-
-  vTaskDelay(pdMS_TO_TICKS(1000));
-
   unsigned int led_level = gpio_get_status_led_level();
   ESP_LOGI(TAG, "gpio_task:initialize_task - LED Level: %u", led_level);
   TEST_ASSERT_EQUAL_UINT(GPIO_LOW, led_level);
@@ -119,7 +115,6 @@ TEST(gpio_task, push_button_isr)
 
 TEST_GROUP_RUNNER(gpio_task)
 {
-  RUN_TEST_CASE(gpio_task, setup);
   RUN_TEST_CASE(gpio_task, initialize_task);
   RUN_TEST_CASE(gpio_task, led_solid);
   RUN_TEST_CASE(gpio_task, led_off);

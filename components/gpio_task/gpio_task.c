@@ -1,5 +1,4 @@
 #include "gpio_task.h"
-#include "generic_task.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -8,11 +7,18 @@
 
 #include "state_machine_task.h"
 
-#define DEBUG
+// #define DEBUG
 
 static const char *TAG_GPIO = "GPIO_TASK";
 
-static GenericTask gpio_task;
+// Forward declarations
+static esp_err_t gpio_on_init(GenericTask *self);
+static esp_err_t gpio_on_stop(GenericTask *self);
+static void gpio_on_message(GenericTask *self, void *msg_buf, size_t msg_len);
+static void gpio_button_task(void *args);
+
+static GenericTask *gpio_task;
+static TaskHandle_t gpio_button_task_handle = NULL;
 static SemaphoreHandle_t gpio_button_semaphore = NULL;
 static TimerHandle_t gpio_blink_timer = NULL;
 
@@ -28,7 +34,7 @@ static int gpio_simulated_button_level = GPIO_LOW;
  */
 BaseType_t gpio_post_msg(GpioMsg_t msg)
 {
-  return generic_task_post_msg(&gpio_task, &msg, sizeof(GpioMsg_t));
+  return generic_task_post_msg(gpio_task, &msg, sizeof(GpioMsg_t));
 }
 
 /** @brief Public API: Change the state of the GPIO status LED
@@ -113,44 +119,10 @@ void gpio_simulate_button_press_isr(void)
 }
 #endif
 
-/** @brief Initialize GPIO hardware
- */
-static void gpio_initialize(void)
-{
-  gpio_reset_pin(HEART_LED_ARRAY_PIN);
-  gpio_set_direction(HEART_LED_ARRAY_PIN, GPIO_MODE_OUTPUT);
-
-  gpio_reset_pin(LED_STATUS_PIN_1);
-  gpio_set_direction(LED_STATUS_PIN_1, GPIO_MODE_OUTPUT);
-
-  gpio_reset_pin(LED_STATUS_PIN_2);
-  gpio_set_direction(LED_STATUS_PIN_2, GPIO_MODE_OUTPUT);
-
-  gpio_config_t button_pin_config = {
-      .pin_bit_mask = (1ULL << BUTTON_PIN),
-      .mode = GPIO_MODE_INPUT,
-      .pull_up_en = GPIO_PULLUP_DISABLE,
-      .pull_down_en = GPIO_PULLDOWN_DISABLE,
-      .intr_type = GPIO_INTR_ANYEDGE};
-  gpio_config(&button_pin_config);
-
-  gpio_button_semaphore = xSemaphoreCreateBinary();
-  if (gpio_button_semaphore == NULL)
-  {
-    ESP_LOGE(TAG_GPIO, "Failed to create Binary Semaphore");
-    return;
-  }
-
-  gpio_install_isr_service(0);
-  gpio_isr_handler_add(BUTTON_PIN, gpio_isr_handler, (void *)BUTTON_PIN);
-
-  ESP_LOGI(TAG_GPIO, "GPIO Initialized");
-}
-
 /** @brief GPIO Button Task
  *
  *  Waits on the button semaphore, debounces, then posts a message
- *  to the GPIO task queue.
+ *  to the state machine.
  */
 static void gpio_button_task(void *args)
 {
@@ -187,47 +159,135 @@ static void gpio_button_task(void *args)
 
 static esp_err_t gpio_on_init(GenericTask *self)
 {
-  // No initialization needed
+  esp_err_t ret;
+
+  // Step 1: Initialize GPIO pins
+  gpio_reset_pin(HEART_LED_ARRAY_PIN);
+  gpio_set_direction(HEART_LED_ARRAY_PIN, GPIO_MODE_OUTPUT);
+
+  gpio_reset_pin(LED_STATUS_PIN_1);
+  gpio_set_direction(LED_STATUS_PIN_1, GPIO_MODE_OUTPUT);
+
+  gpio_reset_pin(LED_STATUS_PIN_2);
+  gpio_set_direction(LED_STATUS_PIN_2, GPIO_MODE_OUTPUT);
+
+  gpio_config_t button_pin_config = {
+      .pin_bit_mask = (1ULL << BUTTON_PIN),
+      .mode = GPIO_MODE_INPUT,
+      .pull_up_en = GPIO_PULLUP_DISABLE,
+      .pull_down_en = GPIO_PULLDOWN_DISABLE,
+      .intr_type = GPIO_INTR_ANYEDGE};
+  
+  ret = gpio_config(&button_pin_config);
+  if (ret != ESP_OK)
+  {
+    ESP_LOGE(TAG_GPIO, "Failed to configure button pin");
+    return ret;
+  }
+
+  // Step 2: Create button semaphore
+  gpio_button_semaphore = xSemaphoreCreateBinary();
+  if (gpio_button_semaphore == NULL)
+  {
+    ESP_LOGE(TAG_GPIO, "Failed to create button semaphore");
+    return ESP_ERR_NO_MEM;
+  }
+
+  // Step 3: Install ISR service and handler
+  ret = gpio_install_isr_service(0);
+  if (ret != ESP_OK)
+  {
+    ESP_LOGE(TAG_GPIO, "Failed to install ISR service");
+    goto cleanup_semaphore;
+  }
+
+  ret = gpio_isr_handler_add(BUTTON_PIN, gpio_isr_handler, (void *)BUTTON_PIN);
+  if (ret != ESP_OK)
+  {
+    ESP_LOGE(TAG_GPIO, "Failed to add ISR handler");
+    goto cleanup_isr_service;
+  }
+
+  // Step 4: Create button task
+  BaseType_t task_created = xTaskCreate(
+      gpio_button_task, 
+      "GPIO_BTN", 
+      2048, 
+      NULL, 
+      15, 
+      &gpio_button_task_handle);
+  
+  if (task_created != pdPASS || gpio_button_task_handle == NULL)
+  {
+    ESP_LOGE(TAG_GPIO, "Failed to create button task");
+    ret = ESP_ERR_NO_MEM;
+    goto cleanup_isr_handler;
+  }
+
   ESP_LOGI(TAG_GPIO, "GPIO Task Initialized");
   return ESP_OK;
+
+  // Cleanup path on error (reverse order)
+cleanup_isr_handler:
+  gpio_isr_handler_remove(BUTTON_PIN);
+cleanup_isr_service:
+  gpio_uninstall_isr_service();
+cleanup_semaphore:
+  vSemaphoreDelete(gpio_button_semaphore);
+  gpio_button_semaphore = NULL;
+  return ret;
 }
 
 static esp_err_t gpio_on_stop(GenericTask *self)
 {
-  esp_err_t ret = ESP_OK;
+  esp_err_t ret;
 
+  // Step 1: Stop and delete blink timer
   if (gpio_blink_timer != NULL)
   {
-    xTimerDelete(gpio_blink_timer, 0);
+    xTimerStop(gpio_blink_timer, portMAX_DELAY);
+    xTimerDelete(gpio_blink_timer, portMAX_DELAY);
     gpio_blink_timer = NULL;
   }
 
-  // Uninstall ISR service
-  if (gpio_isr_handler_remove(BUTTON_PIN) != ESP_OK)
+  // Step 2: Stop button task
+  if (gpio_button_task_handle != NULL)
   {
-    ESP_LOGE(TAG_GPIO, "Failed to remove ISR handler for button pin");
-    ret = ESP_FAIL;
-    goto restore_blink_timer;
+    vTaskDelete(gpio_button_task_handle);
+    gpio_button_task_handle = NULL;
   }
 
+  // Step 3: Remove ISR handler
+  ret = gpio_isr_handler_remove(BUTTON_PIN);
+  if (ret != ESP_OK)
+  {
+    ESP_LOGE(TAG_GPIO, "Failed to remove ISR handler for button pin: %s", esp_err_to_name(ret));
+    // Continue cleanup even if this fails
+  }
+
+  // Step 4: Uninstall ISR service
   gpio_uninstall_isr_service();
+
+  // Step 5: Delete button semaphore
+  if (gpio_button_semaphore != NULL)
+  {
+    vSemaphoreDelete(gpio_button_semaphore);
+    gpio_button_semaphore = NULL;
+  }
+
+  // Step 6: Reset GPIO pins to safe state
   gpio_set_status_led_level(GPIO_LOW);
+  gpio_set_level(HEART_LED_ARRAY_PIN, GPIO_LOW);
+  
+  gpio_reset_pin(HEART_LED_ARRAY_PIN);
+  gpio_reset_pin(LED_STATUS_PIN_1);
+  gpio_reset_pin(LED_STATUS_PIN_2);
+  gpio_reset_pin(BUTTON_PIN);
 
-restore_blink_timer:
-  gpio_blink_timer = xTimerCreate("blink",
-                                  pdMS_TO_TICKS(GPIO_LED_BLINK_INTERVAL_MS),
-                                  pdTRUE,
-                                  NULL,
-                                  gpio_blink_timer_cb);
-
-  return ret;
+  ESP_LOGI(TAG_GPIO, "GPIO Task Stopped");
+  return ESP_OK;
 }
 
-/** @brief GPIO Task message handler
- *  @param self    Pointer to the GenericTask
- *  @param msg_buf Pointer to the received message buffer
- *  @param msg_len Length of the message buffer
- */
 static void gpio_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
 {
   if (msg_len != sizeof(GpioMsg_t))
@@ -282,30 +342,71 @@ static void gpio_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
   }
 }
 
-/** @brief Create GPIO Tasks
+/** @brief Initialize and start GPIO Task
+ *  @return ESP_OK on success, error code on failure
  */
-void gpio_task_init(void)
+esp_err_t gpio_task_init(void)
 {
-  gpio_initialize();
+  ESP_LOGI(TAG_GPIO, "Initializing GPIO Task...");
 
-  // Button task remains a raw FreeRTOS task
-  xTaskCreate(gpio_button_task, TAG_GPIO, 2048, NULL, 15, NULL);
+  // Create GenericTask instance
+  gpio_task = generic_task_create(
+      TAG_GPIO,
+      sizeof(GpioMsg_t),
+      gpio_on_init,
+      gpio_on_message,
+      gpio_on_stop);
 
-  // Status task uses GenericTask with queue
-  gpio_task.name = TAG_GPIO;
-  gpio_task.on_init = gpio_on_init;
-  gpio_task.on_stop = gpio_on_stop;
-  gpio_task.on_message = gpio_on_message;
-  gpio_task.item_size = sizeof(GpioMsg_t);
-  generic_task_start(&gpio_task, 2048, 10);
+  if (gpio_task == NULL)
+  {
+    ESP_LOGE(TAG_GPIO, "Failed to create GPIO GenericTask");
+    return ESP_ERR_NO_MEM;
+  }
+
+  // Start the task
+  esp_err_t ret = generic_task_start(gpio_task, 2048, 10);
+  if (ret != ESP_OK)
+  {
+    ESP_LOGE(TAG_GPIO, "Failed to start GPIO GenericTask: %s", esp_err_to_name(ret));
+    generic_task_delete(gpio_task);
+    gpio_task = NULL;
+    return ret;
+  }
+
+  ESP_LOGI(TAG_GPIO, "GPIO Task started successfully");
+  return ESP_OK;
 }
 
-void gpio_task_stop(void)
+/** @brief Stop and clean up GPIO Task
+ *  @return ESP_OK on success, error code on failure
+ */
+esp_err_t gpio_task_deinit(void)
 {
-  generic_task_stop(&gpio_task);
-}
+  if (gpio_task == NULL)
+  {
+    ESP_LOGW(TAG_GPIO, "GPIO Task not initialized");
+    return ESP_ERR_INVALID_STATE;
+  }
 
-bool gpio_task_is_running(void)
-{
-  return generic_task_is_running(&gpio_task);
+  ESP_LOGI(TAG_GPIO, "Stopping GPIO Task...");
+
+  // Stop the task
+  esp_err_t ret = generic_task_stop(gpio_task);
+  if (ret != ESP_OK)
+  {
+    ESP_LOGE(TAG_GPIO, "Failed to stop GPIO Task: %s", esp_err_to_name(ret));
+    return ret;
+  }
+
+  // Delete the task
+  ret = generic_task_delete(gpio_task);
+  if (ret != ESP_OK)
+  {
+    ESP_LOGE(TAG_GPIO, "Failed to delete GPIO Task: %s", esp_err_to_name(ret));
+    return ret;
+  }
+
+  gpio_task = NULL;
+  ESP_LOGI(TAG_GPIO, "GPIO Task stopped and cleaned up");
+  return ESP_OK;
 }

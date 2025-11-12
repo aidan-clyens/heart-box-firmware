@@ -5,9 +5,11 @@ extern void TEST_state_machine_task_GROUP_RUNNER(void);
 extern void TEST_file_system_GROUP_RUNNER(void);
 extern void TEST_gpio_task_GROUP_RUNNER(void);
 extern void TEST_wifi_task_GROUP_RUNNER(void);
+extern void TEST_generic_task_GROUP_RUNNER(void);
 
 static void run_all_tests(void)
 {
+  RUN_TEST_GROUP(generic_task);
   RUN_TEST_GROUP(file_system);
   RUN_TEST_GROUP(gpio_task);
   RUN_TEST_GROUP(wifi_task);

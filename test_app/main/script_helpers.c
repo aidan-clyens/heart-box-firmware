@@ -37,3 +37,33 @@ void stop_all_tasks()
   TEST_ASSERT_FALSE(wifi_task_is_running());
   TEST_ASSERT_FALSE(gpio_task_is_running());
 }
+
+void start_all_tasks()
+{
+  if (!gpio_task_is_running())
+  {
+    gpio_task_init();
+  }
+
+  if (!wifi_task_is_running())
+  {
+    wifi_task_init();
+  }
+
+  if (!aws_iot_task_is_running())
+  {
+    aws_iot_task_init();
+  }
+
+  if (!state_machine_task_is_running())
+  {
+    state_machine_task_init();
+  }
+
+  vTaskDelay(pdMS_TO_TICKS(1000)); // Allow some time for tasks to start
+
+  TEST_ASSERT_TRUE(aws_iot_task_is_running());
+  TEST_ASSERT_TRUE(state_machine_task_is_running());
+  TEST_ASSERT_TRUE(wifi_task_is_running());
+  TEST_ASSERT_TRUE(gpio_task_is_running());
+}

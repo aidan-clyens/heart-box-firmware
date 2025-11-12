@@ -36,7 +36,6 @@ static void wait_for_connection(unsigned int timeout_ms)
 TEST_GROUP(wifi_task);
 TEST_SETUP(wifi_task)
 {
-  file_system_init();
   TEST_ASSERT_EQUAL(ESP_OK, wifi_task_init());
   vTaskDelay(pdMS_TO_TICKS(DELAY_TIME_MS)); // Allow time for task to initialize
 }

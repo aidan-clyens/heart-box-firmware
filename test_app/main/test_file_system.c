@@ -15,8 +15,6 @@ static const char *TEST_INVALID_KEY = "INVALID";
 TEST_GROUP(file_system);
 TEST_SETUP(file_system)
 {
-  file_system_init();
-
   file_system_write_string(TEST_KEY, TEST_VALUE);
 }
 

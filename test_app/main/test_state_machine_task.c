@@ -36,7 +36,6 @@ TEST(state_machine_task, setup)
  */
 TEST(state_machine_task, initialize_tasks)
 {
-  file_system_init();
   gpio_task_init();
   wifi_task_init();
 

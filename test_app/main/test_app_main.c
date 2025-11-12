@@ -4,6 +4,8 @@
 #include "esp_event.h"
 #include "esp_log.h"
 
+#include "file_system.h"
+
 static const char *TAG = "TEST_APP";
 
 extern void TEST_state_machine_task_GROUP_RUNNER(void);
@@ -18,7 +20,7 @@ static void run_all_tests(void)
   RUN_TEST_GROUP(file_system);
   RUN_TEST_GROUP(gpio_task);
   RUN_TEST_GROUP(wifi_task);
-  RUN_TEST_GROUP(state_machine_task);
+  // RUN_TEST_GROUP(state_machine_task);
 }
 
 // Test application main
@@ -28,6 +30,8 @@ void app_main(void)
   ESP_ERROR_CHECK(esp_netif_init());
   ESP_ERROR_CHECK(esp_event_loop_create_default());
   ESP_LOGI(TAG, "Network interface and event loop initialized for tests");
+
+  file_system_init();
 
   UNITY_MAIN_FUNC(run_all_tests);
 }

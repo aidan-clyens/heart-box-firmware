@@ -12,66 +12,93 @@
 static void generic_task_loop(void *arg)
 {
   GenericTask *task = (GenericTask *)arg;
-  esp_err_t init_result = ESP_OK;
-
+  uint8_t *msg_buf = NULL;
+  esp_err_t result = ESP_OK;
+  
+  // Step 1: Call on_init callback if provided
   if (task->on_init)
   {
-    init_result = task->on_init(task);
-    if (init_result != ESP_OK)
+    ESP_LOGD(task->name, "Calling on_init callback...");
+    result = task->on_init(task);
+    if (result != ESP_OK)
     {
-      ESP_LOGE(task->name, "on_init failed: %s", esp_err_to_name(init_result));
-      
-      // Signal that initialization failed
-      xSemaphoreTake(task->state_mutex, portMAX_DELAY);
-      task->state = TASK_STATE_ERROR;
-      xSemaphoreGive(task->state_mutex);
-      
-      vTaskDelete(NULL);
-      return;
+      ESP_LOGE(task->name, "on_init failed: %s", esp_err_to_name(result));
+      goto task_error;
     }
   }
 
-  // Mark as running after successful init
+  // Step 2: Mark as running after successful init
   xSemaphoreTake(task->state_mutex, portMAX_DELAY);
   task->state = TASK_STATE_RUNNING;
   xSemaphoreGive(task->state_mutex);
 
-  uint8_t *msg_buf = pvPortMalloc(task->item_size);
+  // Step 3: Allocate message buffer
+  msg_buf = pvPortMalloc(task->item_size);
   if (msg_buf == NULL)
   {
     ESP_LOGE(task->name, "Failed to allocate msg buffer of size %u", (unsigned)task->item_size);
-    
-    xSemaphoreTake(task->state_mutex, portMAX_DELAY);
-    task->state = TASK_STATE_ERROR;
-    xSemaphoreGive(task->state_mutex);
-    
-    vTaskDelete(NULL);
-    return;
+    goto task_error;
   }
 
-  // Main message loop
+  // Step 4: Main message loop
   for (;;)
   {
-    // Check for stop signal
     if (task->should_stop)
     {
       ESP_LOGI(task->name, "Received stop signal, exiting task loop");
       break;
     }
 
-    // Wait for messages with timeout to periodically check should_stop
-    if (xQueueReceive(task->queue, msg_buf, pdMS_TO_TICKS(100)) != pdFALSE)
+    if (xQueueReceive(task->queue, msg_buf, pdMS_TO_TICKS(100)) == pdTRUE)
     {
       if (task->on_message)
       {
-        ESP_LOGI(task->name, "Received message, invoking on_message callback");
         task->on_message(task, msg_buf, task->item_size);
       }
     }
   }
 
-  // Cleanup
-  generic_task_delete(task);
+  // Step 5: Normal cleanup - free message buffer
+  if (msg_buf != NULL)
+  {
+    vPortFree(msg_buf);
+    msg_buf = NULL;
+  }
+
+  // Step 6: Call on_stop callback if provided (runs in task context)
+  if (task->on_stop)
+  {
+    ESP_LOGD(task->name, "Calling on_stop callback...");
+    result = task->on_stop(task);
+    if (result != ESP_OK)
+    {
+      ESP_LOGE(task->name, "on_stop failed: %s", esp_err_to_name(result));
+      // Continue with shutdown even if on_stop fails
+    }
+  }
+  
+  // Step 7: Mark task as stopped and exit
+  xSemaphoreTake(task->state_mutex, portMAX_DELAY);
+  task->state = TASK_STATE_STOPPED;
+  task->handle = NULL;
+  xSemaphoreGive(task->state_mutex);
+  
+  vTaskDelete(NULL);  // Delete self - must be last operation
+  return;
+
+task_error:
+  // Cleanup on error
+  if (msg_buf != NULL)
+  {
+    vPortFree(msg_buf);
+  }
+  
+  xSemaphoreTake(task->state_mutex, portMAX_DELAY);
+  task->state = TASK_STATE_ERROR;
+  task->handle = NULL;
+  xSemaphoreGive(task->state_mutex);
+  
+  vTaskDelete(NULL);  // Delete self
 }
 
 /** @brief: Public API: Creates a new GenericTask instance
@@ -94,7 +121,7 @@ GenericTask *generic_task_create(
   {
     return NULL;
   }
-  
+
   memset(task, 0, sizeof(GenericTask));
   task->name = name;
   task->state = TASK_STATE_STOPPED;
@@ -113,6 +140,7 @@ GenericTask *generic_task_create(
   if (task->state_mutex == NULL)
   {
     ESP_LOGE(task->name, "Failed to create state mutex");
+    vPortFree(task);
     return NULL;
   }
 
@@ -124,9 +152,8 @@ GenericTask *generic_task_create(
   if (new_queue == NULL)
   {
     ESP_LOGE(task->name, "Failed to create message queue");
-
-    task->state = TASK_STATE_STOPPED;
-
+    vSemaphoreDelete(task->state_mutex);
+    vPortFree(task);
     return NULL;
   }
   
@@ -150,12 +177,21 @@ esp_err_t generic_task_delete(GenericTask *task)
   const char *name = task->name ? task->name : "UnnamedTask";
   ESP_LOGI(name, "Deleting GenericTask instance...");
 
-  // Cleanup FreeRTOS resources
-  if (task->handle != NULL)
+  // Verify task is not running
+  if (task->state_mutex != NULL)
   {
-    vTaskDelete(task->handle);
+    xSemaphoreTake(task->state_mutex, portMAX_DELAY);
+    eGenericTaskState current_state = task->state;
+    xSemaphoreGive(task->state_mutex);
+    
+    if (current_state != TASK_STATE_STOPPED && current_state != TASK_STATE_ERROR)
+    {
+      ESP_LOGE(name, "Cannot delete task while it is running (state=%d). Call generic_task_stop() first.", current_state);
+      return ESP_ERR_INVALID_STATE;
+    }
   }
 
+  // Cleanup FreeRTOS resources
   if (task->queue != NULL)
   {
     vQueueDelete(task->queue);
@@ -164,6 +200,12 @@ esp_err_t generic_task_delete(GenericTask *task)
   if (task->state_mutex != NULL)
   {
     vSemaphoreDelete(task->state_mutex);
+  }
+
+  if (task->handle != NULL)
+  {
+    ESP_LOGW(name, "Task handle still exists, forcing deletion");
+    vTaskDelete(task->handle);
   }
 
   // Free the task structure
@@ -276,18 +318,13 @@ esp_err_t generic_task_start(GenericTask *task, uint32_t stack_size, UBaseType_t
  */
 esp_err_t generic_task_stop(GenericTask *task)
 {
-  if (task == NULL)
+  if (task == NULL || task->state_mutex == NULL || task->queue == NULL)
   {
+    ESP_LOGW("GenericTask", "Invalid argument to generic_task_stop. Task was not created.");
     return ESP_ERR_INVALID_ARG;
   }
 
   ESP_LOGI(task->name, "Stopping task...");
-
-  if (!task->state_mutex)
-  {
-    ESP_LOGW(task->name, "Task was never started");
-    return ESP_ERR_INVALID_STATE;
-  }
 
   xSemaphoreTake(task->state_mutex, portMAX_DELAY);
 
@@ -296,7 +333,7 @@ esp_err_t generic_task_stop(GenericTask *task)
   {
     ESP_LOGW(task->name, "Task not running (state=%d)", task->state);
     xSemaphoreGive(task->state_mutex);
-    return ESP_ERR_INVALID_STATE;
+    return ESP_OK;
   }
 
   // Mark as stopping
@@ -305,24 +342,6 @@ esp_err_t generic_task_stop(GenericTask *task)
   QueueHandle_t queue_backup = task->queue;
   
   xSemaphoreGive(task->state_mutex);
-
-  // Call on_stop callback before deleting task
-  esp_err_t stop_result = ESP_OK;
-  if (task->on_stop)
-  {
-    stop_result = task->on_stop(task);
-    if (stop_result != ESP_OK)
-    {
-      ESP_LOGE(task->name, "on_stop failed: %s", esp_err_to_name(stop_result));
-      
-      // Rollback to running state
-      xSemaphoreTake(task->state_mutex, portMAX_DELAY);
-      task->state = TASK_STATE_RUNNING;
-      xSemaphoreGive(task->state_mutex);
-      
-      return stop_result;
-    }
-  }
 
   // Signal task to stop gracefully
   task->should_stop = true;
@@ -341,19 +360,10 @@ esp_err_t generic_task_stop(GenericTask *task)
     vTaskDelete(handle_backup);
   }
 
-  // Clean up resources
   xSemaphoreTake(task->state_mutex, portMAX_DELAY);
-  
-  if (task->queue != NULL)
-  {
-    vQueueDelete(task->queue);
-    task->queue = NULL;
-  }
-  
   task->handle = NULL;
   task->state = TASK_STATE_STOPPED;
   task->should_stop = false;
-  
   xSemaphoreGive(task->state_mutex);
 
   ESP_LOGI(task->name, "Task stopped successfully");

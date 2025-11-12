@@ -536,7 +536,7 @@ static void aws_iot_event_callback(MQTTContext_t * p_mqtt_context,
 /** @brief Initialize AWS IoT Task
  *  @param self Pointer to the generic task object for the AWS IoT task
  */
-static void aws_iot_on_init(GenericTask *self)
+static esp_err_t aws_iot_on_init(GenericTask *self)
 {
   MQTTStatus_t mqtt_status = MQTTSuccess;
   MQTTFixedBuffer_t network_buffer;
@@ -554,7 +554,7 @@ static void aws_iot_on_init(GenericTask *self)
   if (mqtt_event_group == NULL)
   {
     ESP_LOGE(TAG_AWS_IOT, "Failed to create MQTT event group");
-    return;
+    return ESP_FAIL;
   }
 
   mqtt_status = MQTT_Init(&mqtt_context,
@@ -566,7 +566,7 @@ static void aws_iot_on_init(GenericTask *self)
   if (mqtt_status != MQTTSuccess)
   {
     ESP_LOGE(TAG_AWS_IOT, "MQTT_Init failed: Status = %s.", MQTT_Status_strerror(mqtt_status));
-    return;
+    return ESP_FAIL;
   }
 
   mqtt_status = MQTT_InitStatefulQoS(&mqtt_context,
@@ -578,7 +578,7 @@ static void aws_iot_on_init(GenericTask *self)
   if (mqtt_status != MQTTSuccess)
   {
     ESP_LOGE(TAG_AWS_IOT, "MQTT_InitStatefulQoS failed: Status = %s.", MQTT_Status_strerror(mqtt_status));
-    return;
+    return ESP_FAIL;
   }
 
   ESP_LOGI(TAG_AWS_IOT, "MQTT initialized successfully.");
@@ -592,7 +592,7 @@ static void aws_iot_on_init(GenericTask *self)
   if (network_context.xTlsContextSemaphore == NULL)
   {
     ESP_LOGE(TAG_AWS_IOT, "Failed to create TLS context semaphore.");
-    return;
+    return ESP_FAIL;
   }
   
   // Initialize TLS connection credentials
@@ -608,7 +608,7 @@ static void aws_iot_on_init(GenericTask *self)
       network_context.pcClientKey == NULL || network_context.pcClientKeySize <= 0)
   {
     ESP_LOGE(TAG_AWS_IOT, "TLS credentials are not properly configured.");
-    return;
+    return ESP_FAIL;
   }
 
   ESP_LOGI(TAG_AWS_IOT, "AWS IoT TLS credentials for client %s:", MQTT_CLIENT_IDENTIFIER);
@@ -627,22 +627,32 @@ static void aws_iot_on_init(GenericTask *self)
   connect_info.keepAliveSeconds = MQTT_KEEP_ALIVE_INTERVAL_S;
 
   ESP_LOGI(TAG_AWS_IOT, "AWS IoT Task initialized successfully.");
+  return ESP_OK;
 }
 
-static void aws_iot_on_stop(GenericTask *self)
+static esp_err_t aws_iot_on_stop(GenericTask *self)
 {
   ESP_LOGI(TAG_AWS_IOT, "Stopping AWS IoT Task...");
 
   // Disconnect MQTT if connected
   if (mqtt_context.connectStatus == MQTTConnected)
   {
-    MQTT_Disconnect(&mqtt_context);
+    if (MQTT_Disconnect(&mqtt_context) != MQTTSuccess)
+    {
+      ESP_LOGE(TAG_AWS_IOT, "Failed to disconnect MQTT cleanly.");
+      return ESP_FAIL;
+    }
   }
 
   // Disconnect TLS
-  xTlsDisconnect(&network_context);
+  if (xTlsDisconnect(&network_context) != TLS_TRANSPORT_SUCCESS)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Failed to disconnect TLS cleanly.");
+    return ESP_FAIL;
+  }
 
   ESP_LOGI(TAG_AWS_IOT, "AWS IoT Task stopped.");
+  return ESP_OK;
 }
 
 /** @brief Handle messages for AWS IoT Task

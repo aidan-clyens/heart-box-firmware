@@ -185,13 +185,17 @@ static void gpio_button_task(void *args)
   }
 }
 
-static void gpio_on_init(GenericTask *self)
+static esp_err_t gpio_on_init(GenericTask *self)
 {
   // No initialization needed
+  ESP_LOGI(TAG_GPIO, "GPIO Task Initialized");
+  return ESP_OK;
 }
 
-static void gpio_on_stop(GenericTask *self)
+static esp_err_t gpio_on_stop(GenericTask *self)
 {
+  esp_err_t ret = ESP_OK;
+
   if (gpio_blink_timer != NULL)
   {
     xTimerDelete(gpio_blink_timer, 0);
@@ -199,10 +203,24 @@ static void gpio_on_stop(GenericTask *self)
   }
 
   // Uninstall ISR service
-  gpio_isr_handler_remove(BUTTON_PIN);
-  gpio_uninstall_isr_service();
+  if (gpio_isr_handler_remove(BUTTON_PIN) != ESP_OK)
+  {
+    ESP_LOGE(TAG_GPIO, "Failed to remove ISR handler for button pin");
+    ret = ESP_FAIL;
+    goto restore_blink_timer;
+  }
 
+  gpio_uninstall_isr_service();
   gpio_set_status_led_level(GPIO_LOW);
+
+restore_blink_timer:
+  gpio_blink_timer = xTimerCreate("blink",
+                                  pdMS_TO_TICKS(GPIO_LED_BLINK_INTERVAL_MS),
+                                  pdTRUE,
+                                  NULL,
+                                  gpio_blink_timer_cb);
+
+  return ret;
 }
 
 /** @brief GPIO Task message handler

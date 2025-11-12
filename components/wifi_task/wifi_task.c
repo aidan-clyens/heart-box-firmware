@@ -251,34 +251,129 @@ static void wifi_ping_start(const char *hostname)
 /** @brief Initialize WiFi
  *  @param self Pointer to the generic task object for the WiFi task
 */
-static void wifi_on_init(GenericTask *self)
+static esp_err_t wifi_on_init(GenericTask *self)
 {
-  esp_netif_init();
-  esp_event_loop_create_default();
+  esp_err_t ret;
+
+  // Step 1: Initialize network interface
+  ret = esp_netif_init();
+  if (ret != ESP_OK)
+  {
+    ESP_LOGE(TAG_WIFI, "esp_netif_init failed: %s", esp_err_to_name(ret));
+    return ret;
+  }
+
+  // Step 2: Create default event loop
+  ret = esp_event_loop_create_default();
+  if (ret != ESP_OK)
+  {
+    ESP_LOGE(TAG_WIFI, "esp_event_loop_create_default failed: %s", esp_err_to_name(ret));
+    goto cleanup_netif;
+  }
+
+  // Step 3: Create STA network interface
   sta_netif = esp_netif_create_default_wifi_sta();
+  if (sta_netif == NULL)
+  {
+    ESP_LOGE(TAG_WIFI, "esp_netif_create_default_wifi_sta failed");
+    ret = ESP_FAIL;
+    goto cleanup_event_loop;
+  }
+
+  // Step 4: Create AP network interface
   ap_netif = esp_netif_create_default_wifi_ap();
+  if (ap_netif == NULL)
+  {
+    ESP_LOGE(TAG_WIFI, "esp_netif_create_default_wifi_ap failed");
+    ret = ESP_FAIL;
+    goto cleanup_sta_netif;
+  }
 
+  // Step 5: Initialize WiFi driver
   wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-  esp_wifi_init(&cfg);
+  ret = esp_wifi_init(&cfg);
+  if (ret != ESP_OK)
+  {
+    ESP_LOGE(TAG_WIFI, "esp_wifi_init failed: %s", esp_err_to_name(ret));
+    goto cleanup_ap_netif;
+  }
 
-  esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID,
-                                      &wifi_event_handler, NULL, &instance_any_id);
+  // Step 6: Register WiFi event handler
+  ret = esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL, &instance_any_id);
+  if (ret != ESP_OK)
+  {
+    ESP_LOGE(TAG_WIFI, "esp_event_handler_instance_register (WIFI_EVENT) failed: %s", esp_err_to_name(ret));
+    goto cleanup_wifi;
+  }
 
-  esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP,
-                                      &wifi_event_handler, NULL, &instance_got_ip);
+  // Step 7: Register IP event handler
+  ret = esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL, &instance_got_ip);
+  if (ret != ESP_OK)
+  {
+    ESP_LOGE(TAG_WIFI, "esp_event_handler_instance_register (IP_EVENT) failed: %s", esp_err_to_name(ret));
+    goto cleanup_wifi_event;
+  }
+
+  return ESP_OK;
+
+  // Cleanup path - executed only on error (reverse order of initialization)
+cleanup_wifi_event:
+  esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, instance_any_id);
+cleanup_wifi:
+  esp_wifi_deinit();
+cleanup_ap_netif:
+  esp_netif_destroy(ap_netif);
+  ap_netif = NULL;
+cleanup_sta_netif:
+  esp_netif_destroy(sta_netif);
+  sta_netif = NULL;
+cleanup_event_loop:
+  esp_event_loop_delete_default();
+cleanup_netif:
+  esp_netif_deinit();
+  return ret;
 }
 
 /** @brief Deinitialize WiFi
  *  @param self Pointer to the generic task object for the WiFi task
 */
-static void wifi_on_stop(GenericTask *self)
+static esp_err_t wifi_on_stop(GenericTask *self)
 {
-  esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, &instance_any_id);
-  esp_event_handler_instance_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, &instance_got_ip);
+  esp_err_t ret;
 
-  esp_wifi_stop();
-  esp_wifi_deinit();
+  // Step 1: Unregister IP event handler
+  ret = esp_event_handler_instance_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, instance_got_ip);
+  if (ret != ESP_OK)
+  {
+    ESP_LOGE(TAG_WIFI, "esp_event_handler_instance_unregister (IP_EVENT) failed: %s", esp_err_to_name(ret));
+    return ret;
+  }
 
+  // Step 2: Unregister WiFi event handler
+  ret = esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, instance_any_id);
+  if (ret != ESP_OK)
+  {
+    ESP_LOGE(TAG_WIFI, "esp_event_handler_instance_unregister (WIFI_EVENT) failed: %s", esp_err_to_name(ret));
+    goto restore_ip_event;
+  }
+
+  // Step 3: Stop WiFi
+  ret = esp_wifi_stop();
+  if (ret != ESP_OK)
+  {
+    ESP_LOGE(TAG_WIFI, "esp_wifi_stop failed: %s", esp_err_to_name(ret));
+    goto restore_wifi_stop;
+  }
+
+  // Step 4: Deinitialize WiFi driver
+  ret = esp_wifi_deinit();
+  if (ret != ESP_OK)
+  {
+    ESP_LOGE(TAG_WIFI, "esp_wifi_deinit failed: %s", esp_err_to_name(ret));
+    goto restore_wifi_deinit;
+  }
+
+  // Step 5: Destroy network interfaces
   if (sta_netif != NULL)
   {
     esp_netif_destroy(sta_netif);
@@ -291,8 +386,35 @@ static void wifi_on_stop(GenericTask *self)
     ap_netif = NULL;
   }
 
-  esp_event_loop_delete_default();
-  esp_netif_deinit();
+  // Step 6: Delete event loop
+  ret = esp_event_loop_delete_default();
+  if (ret != ESP_OK)
+  {
+    ESP_LOGE(TAG_WIFI, "esp_event_loop_delete_default failed: %s", esp_err_to_name(ret));
+  }
+
+  // Step 7: Deinitialize network interface
+  ret = esp_netif_deinit();
+  if (ret != ESP_OK)
+  {
+    ESP_LOGE(TAG_WIFI, "esp_netif_deinit failed: %s", esp_err_to_name(ret));
+    return ret;
+  }
+
+  // Reset state flags
+  is_wifi_started = false;
+  is_wifi_connected = false;
+
+  return ESP_OK;
+
+  // Rollback path - restore event handlers on early failure
+restore_wifi_stop:
+  esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &wifi_event_handler, NULL, &instance_any_id);
+restore_wifi_deinit:
+  esp_wifi_init(NULL); // Re-initialize WiFi to allow event handler registration
+restore_ip_event:
+  esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &wifi_event_handler, NULL, &instance_got_ip);
+  return ret;
 }
 
 /** @brief WiFi Task message handler

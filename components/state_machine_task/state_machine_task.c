@@ -205,12 +205,14 @@ static void state_machine_enter_state(eAppState_t new_state)
   }
 }
 
-static void state_machine_on_init(GenericTask *self)
+static esp_err_t state_machine_on_init(GenericTask *self)
 {
   (void)self; // Not used
+  ESP_LOGI(TAG, "State Machine Task initialized");
+  return ESP_OK;
 }
 
-static void state_machine_on_stop(GenericTask *self)
+static esp_err_t state_machine_on_stop(GenericTask *self)
 {
   (void)self; // Not used
 
@@ -219,6 +221,9 @@ static void state_machine_on_stop(GenericTask *self)
     http_stop_webserver(sm_http_server);
     sm_http_server = NULL;
   }
+
+  ESP_LOGI(TAG, "State Machine Task stopped");
+  return ESP_OK;
 }
 
 /** @brief State Machine Task message handler

@@ -10,4 +10,6 @@
 
 void stop_all_tasks()
 {
+  wifi_task_deinit();
+  gpio_task_deinit();
 }

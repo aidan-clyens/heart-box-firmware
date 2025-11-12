@@ -15,44 +15,43 @@
 #error "TEST_WIFI_PASSWORD is not defined. Please define it in the project configuration."
 #endif
 
+#define DELAY_TIME_MS 500
+#define CONNECT_TIMEOUT_MS 30 * 1000
+
+static void wait_for_connection(unsigned int timeout_ms)
+{
+  TickType_t start_tick = xTaskGetTickCount();
+  while (xTaskGetTickCount() - start_tick < pdMS_TO_TICKS(timeout_ms))
+  {
+    if (wifi_task_is_connected())
+    {
+      return;
+    }
+    vTaskDelay(pdMS_TO_TICKS(100));
+  }
+  TEST_FAIL_MESSAGE("Timeout waiting for WiFi connection state change");
+}
+
 // Test group setup
 TEST_GROUP(wifi_task);
 TEST_SETUP(wifi_task)
 {
-  // Setup code here
+  file_system_init();
+  TEST_ASSERT_EQUAL(ESP_OK, wifi_task_init());
+  vTaskDelay(pdMS_TO_TICKS(DELAY_TIME_MS)); // Allow time for task to initialize
 }
 
 TEST_TEAR_DOWN(wifi_task)
 {
-  // Teardown code here
-}
-
-TEST(wifi_task, setup)
-{
-  stop_all_tasks();
+  TEST_ASSERT_EQUAL(ESP_OK, wifi_task_deinit());
+  vTaskDelay(pdMS_TO_TICKS(DELAY_TIME_MS)); // Allow time for task to stop
 }
 
 /** @brief Test: Initialize WiFi task
- *  @test Expected: wifi_task_init() completes without errors
+ *  @test Expected: WiFi task starts in idle state (not started, not connected)
  */
 TEST(wifi_task, initialize_task)
 {
-  file_system_init();
-
-  if (wifi_task_is_running())
-  {
-    wifi_task_stop();
-    vTaskDelay(pdMS_TO_TICKS(100)); // Allow some time for task to stop
-  }
-
-  TEST_ASSERT_FALSE(wifi_task_is_running());
-
-  wifi_task_init();
-
-  vTaskDelay(pdMS_TO_TICKS(500)); // Allow some time for task to initialize
-
-  TEST_ASSERT_TRUE(wifi_task_is_running());
-
   TEST_ASSERT_FALSE(wifi_task_is_started());
   TEST_ASSERT_FALSE(wifi_task_is_connected());
 }
@@ -62,9 +61,12 @@ TEST(wifi_task, initialize_task)
  */
 TEST(wifi_task, start_ap_mode)
 {
+  TEST_ASSERT_FALSE(wifi_task_is_started());
+  TEST_ASSERT_FALSE(wifi_task_is_connected());
+
   wifi_set_ap_mode();
 
-  vTaskDelay(pdMS_TO_TICKS(500)); // Allow some time for command to process and start
+  vTaskDelay(pdMS_TO_TICKS(CONNECT_TIMEOUT_MS)); // Allow some time for command to process and start
 
   TEST_ASSERT_TRUE(wifi_task_is_started());
   TEST_ASSERT_FALSE(wifi_task_is_connected());
@@ -78,9 +80,12 @@ TEST(wifi_task, start_ap_mode)
  */
 TEST(wifi_task, start_sta_mode_invalid_credentials)
 {
+  TEST_ASSERT_FALSE(wifi_task_is_started());
+  TEST_ASSERT_FALSE(wifi_task_is_connected());
+
   wifi_set_sta_credentials("TestSSID", "TestPassword");
 
-  vTaskDelay(pdMS_TO_TICKS(5000)); // Allow some time for command to process and connect
+  vTaskDelay(pdMS_TO_TICKS(CONNECT_TIMEOUT_MS)); // Allow some time for command to process and start
 
   TEST_ASSERT_TRUE(wifi_task_is_started());
   TEST_ASSERT_FALSE(wifi_task_is_connected());
@@ -99,9 +104,12 @@ TEST(wifi_task, start_sta_mode_invalid_credentials)
  */
 TEST(wifi_task, start_sta_mode_valid_credentials)
 {
+  TEST_ASSERT_FALSE(wifi_task_is_started());
+  TEST_ASSERT_FALSE(wifi_task_is_connected());
+
   wifi_set_sta_credentials(TEST_WIFI_SSID, TEST_WIFI_PASSWORD);
 
-  vTaskDelay(pdMS_TO_TICKS(5000)); // Allow some time for command to process and connect
+  wait_for_connection(CONNECT_TIMEOUT_MS);
 
   TEST_ASSERT_TRUE(wifi_task_is_started());
   TEST_ASSERT_TRUE(wifi_task_is_connected());
@@ -124,20 +132,38 @@ TEST(wifi_task, ping)
  */
 TEST(wifi_task, change_to_ap_mode)
 {
+  TEST_ASSERT_FALSE(wifi_task_is_started());
+  TEST_ASSERT_FALSE(wifi_task_is_connected());
+
+  wifi_set_sta_credentials(TEST_WIFI_SSID, TEST_WIFI_PASSWORD);
+
+  wait_for_connection(CONNECT_TIMEOUT_MS);
+
+  TEST_ASSERT_TRUE(wifi_task_is_started());
+  TEST_ASSERT_TRUE(wifi_task_is_connected());
+
+  wifi_mode_t mode = wifi_get_mode();
+  TEST_ASSERT_EQUAL(WIFI_MODE_STA, mode);
+
+  // Get the current credentials and verify
+  WifiCredentials_t creds = wifi_get_current_credentials();
+  TEST_ASSERT_EQUAL_STRING(TEST_WIFI_SSID, creds.ssid);
+  TEST_ASSERT_EQUAL_STRING(TEST_WIFI_PASSWORD, creds.password);
+
+  // Now switch to AP mode
   wifi_set_ap_mode();
 
-  vTaskDelay(pdMS_TO_TICKS(1000)); // Allow some time for command to process and start
+  vTaskDelay(pdMS_TO_TICKS(CONNECT_TIMEOUT_MS)); // Allow some time for command to process and start
 
   TEST_ASSERT_TRUE(wifi_task_is_started());
   TEST_ASSERT_FALSE(wifi_task_is_connected());
 
-  wifi_mode_t mode = wifi_get_mode();
+  mode = wifi_get_mode();
   TEST_ASSERT_EQUAL(WIFI_MODE_AP, mode);
 }
 
 TEST_GROUP_RUNNER(wifi_task)
 {
-  RUN_TEST_CASE(wifi_task, setup);
   RUN_TEST_CASE(wifi_task, initialize_task);
   RUN_TEST_CASE(wifi_task, start_ap_mode);
   RUN_TEST_CASE(wifi_task, start_sta_mode_invalid_credentials);

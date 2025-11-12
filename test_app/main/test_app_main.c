@@ -1,5 +1,10 @@
 #include "unity.h"
 #include "unity_fixture.h"
+#include "esp_netif.h"
+#include "esp_event.h"
+#include "esp_log.h"
+
+static const char *TAG = "TEST_APP";
 
 extern void TEST_state_machine_task_GROUP_RUNNER(void);
 extern void TEST_file_system_GROUP_RUNNER(void);
@@ -19,5 +24,10 @@ static void run_all_tests(void)
 // Test application main
 void app_main(void)
 {
+  // Initialize global ESP-IDF networking and event loop (once per application)
+  ESP_ERROR_CHECK(esp_netif_init());
+  ESP_ERROR_CHECK(esp_event_loop_create_default());
+  ESP_LOGI(TAG, "Network interface and event loop initialized for tests");
+
   UNITY_MAIN_FUNC(run_all_tests);
 }

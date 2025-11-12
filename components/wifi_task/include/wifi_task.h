@@ -10,16 +10,15 @@ extern "C" {
 
 #include "message_types.h"
 
-/** @brief Initialize and start the WiFi task */
-void wifi_task_init(void);
-
-/** @brief Stop the WiFi task */
-void wifi_task_stop(void);
-
-/** @brief Check if the WiFi task is running
- *  @return true if running, false otherwise
+/** @brief Initialize and start the WiFi task
+ *  @return ESP_OK on success, error code on failure
  */
-bool wifi_task_is_running(void);
+esp_err_t wifi_task_init(void);
+
+/** @brief Stop and clean up the WiFi task
+ *  @return ESP_OK on success, error code on failure
+ */
+esp_err_t wifi_task_deinit(void);
 
 /** @brief Request WiFi AP mode */
 void wifi_set_ap_mode(void);

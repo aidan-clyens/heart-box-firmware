@@ -7,14 +7,18 @@
 #include "freertos/semphr.h"
 #include "esp_err.h"
 
+// Forward declaration
 struct GenericTask;
 
-// Callbacks now return esp_err_t to indicate success/failure
 typedef esp_err_t (*TaskOnInit)(struct GenericTask *self);
 typedef esp_err_t (*TaskOnStop)(struct GenericTask *self);
 typedef void (*TaskOnMessage)(struct GenericTask *self, void *msg_buf, size_t msg_len);
 
-typedef enum {
+/** @enum eGenericTaskState
+ *  @brief GenericTask running states
+ */
+typedef enum
+{
   TASK_STATE_STOPPED = 0,
   TASK_STATE_STARTING,
   TASK_STATE_RUNNING,
@@ -22,6 +26,10 @@ typedef enum {
   TASK_STATE_ERROR
 } eGenericTaskState;
 
+/** @struct GenericTask
+ *  @brief Generic task structure 
+ *  Holds FreeRTOS task, queue, and state information
+ */
 typedef struct GenericTask
 {
   const char *name;
@@ -77,13 +85,15 @@ BaseType_t generic_task_post_msg(GenericTask *task, const void *msg, size_t msg_
 
 /** @brief Public API: Checks if the task is currently running
  *  @param task Pointer to the GenericTask instance
- *  @return true if the task is running, false otherwise
+ *  @return true if the task is running, false otherwise.
+ *          Returns false if task is NULL.
  */
 bool generic_task_is_running(GenericTask *task);
 
 /** @brief Public API: Gets the current state of the task
  *  @param task Pointer to the GenericTask instance
- *  @return Current state of the task as eGenericTaskState
+ *  @return Current state of the task as eGenericTaskState.
+ *          Returns TASK_STATE_ERROR if task is NULL.
  */
 eGenericTaskState generic_task_get_state(GenericTask *task);
 

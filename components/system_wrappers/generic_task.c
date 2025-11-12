@@ -106,7 +106,33 @@ GenericTask *generic_task_create(
   task->on_message = on_message;
   task->on_stop = on_stop;
   task->should_stop = false;
+
+  // Create mutex for state protection
+  ESP_LOGI(task->name, "Creating state mutex...");
+  task->state_mutex = xSemaphoreCreateMutex();
+  if (task->state_mutex == NULL)
+  {
+    ESP_LOGE(task->name, "Failed to create state mutex");
+    return NULL;
+  }
+
+  ESP_LOGI(task->name, "Created state mutex.");
+
+  // Create message queue
+  ESP_LOGI(task->name, "Creating message queue...");
+  QueueHandle_t new_queue = xQueueCreate(TASK_QUEUE_SIZE, task->item_size);
+  if (new_queue == NULL)
+  {
+    ESP_LOGE(task->name, "Failed to create message queue");
+
+    task->state = TASK_STATE_STOPPED;
+
+    return NULL;
+  }
   
+  task->queue = new_queue;
+  ESP_LOGI(task->name, "Message queue created");
+
   return task;
 }
 
@@ -155,7 +181,7 @@ esp_err_t generic_task_delete(GenericTask *task)
 */
 esp_err_t generic_task_start(GenericTask *task, uint32_t stack_size, UBaseType_t priority)
 {
-  if (!task)
+  if (task == NULL)
   {
     return ESP_ERR_INVALID_ARG;
   }
@@ -163,19 +189,6 @@ esp_err_t generic_task_start(GenericTask *task, uint32_t stack_size, UBaseType_t
   ESP_LOGI(task->name, "Starting task...");
 
   // Take mutex to prevent concurrent start/stop
-  if (task->state_mutex == NULL)
-  {
-    ESP_LOGI(task->name, "Creating state mutex...");
-    task->state_mutex = xSemaphoreCreateMutex();
-    if (task->state_mutex == NULL)
-    {
-      ESP_LOGE(task->name, "Failed to create state mutex");
-      return ESP_ERR_NO_MEM;
-    }
-  }
-
-  ESP_LOGI(task->name, "Created state mutex.");
-
   xSemaphoreTake(task->state_mutex, portMAX_DELAY);
 
   // Check if already running or in transition
@@ -199,28 +212,7 @@ esp_err_t generic_task_start(GenericTask *task, uint32_t stack_size, UBaseType_t
   
   xSemaphoreGive(task->state_mutex);
 
-  // Step 1: Create queue
-  ESP_LOGI(task->name, "Creating message queue...");
-  QueueHandle_t new_queue = xQueueCreate(TASK_QUEUE_SIZE, task->item_size);
-  if (new_queue == NULL)
-  {
-    ESP_LOGE(task->name, "Failed to create message queue");
-    
-    xSemaphoreTake(task->state_mutex, portMAX_DELAY);
-    task->state = TASK_STATE_STOPPED;
-    xSemaphoreGive(task->state_mutex);
-    
-    return ESP_ERR_NO_MEM;
-  }
-
-  ESP_LOGI(task->name, "Message queue created");
-
-  // Assign queue BEFORE creating task to avoid race condition
-  xSemaphoreTake(task->state_mutex, portMAX_DELAY);
-  task->queue = new_queue;
-  xSemaphoreGive(task->state_mutex);
-
-  // Step 2: Create FreeRTOS task
+  // Create FreeRTOS task
   ESP_LOGI(task->name, "Creating FreeRTOS task...");
   TaskHandle_t new_handle = NULL;
   BaseType_t create_result = xTaskCreate(
@@ -235,14 +227,7 @@ esp_err_t generic_task_start(GenericTask *task, uint32_t stack_size, UBaseType_t
   if (create_result != pdPASS || new_handle == NULL)
   {
     ESP_LOGE(task->name, "Failed to create FreeRTOS task");
-    
-    // Rollback: Delete queue and clear handle
-    xSemaphoreTake(task->state_mutex, portMAX_DELAY);
-    task->queue = NULL;
-    xSemaphoreGive(task->state_mutex);
-    
-    vQueueDelete(new_queue);
-    
+
     xSemaphoreTake(task->state_mutex, portMAX_DELAY);
     task->state = TASK_STATE_STOPPED;
     xSemaphoreGive(task->state_mutex);
@@ -274,11 +259,6 @@ esp_err_t generic_task_start(GenericTask *task, uint32_t stack_size, UBaseType_t
     
     // Clean up since task deleted itself
     xSemaphoreTake(task->state_mutex, portMAX_DELAY);
-    if (task->queue)
-    {
-      vQueueDelete(task->queue);
-      task->queue = NULL;
-    }
     task->handle = NULL;
     task->state = TASK_STATE_STOPPED;
     xSemaphoreGive(task->state_mutex);
@@ -296,7 +276,7 @@ esp_err_t generic_task_start(GenericTask *task, uint32_t stack_size, UBaseType_t
  */
 esp_err_t generic_task_stop(GenericTask *task)
 {
-  if (!task)
+  if (task == NULL)
   {
     return ESP_ERR_INVALID_ARG;
   }
@@ -388,11 +368,11 @@ esp_err_t generic_task_stop(GenericTask *task)
  */
 BaseType_t generic_task_post_msg(GenericTask *task, const void *msg, size_t msg_len)
 {
-  if (!task || task->queue == NULL)
+  if (task == NULL || task->queue == NULL)
   {
-    return errQUEUE_FULL;
+    return pdFALSE;
   }
-  
+
   if (msg_len != task->item_size)
   {
     // Enforce exact size to avoid truncation
@@ -408,7 +388,7 @@ BaseType_t generic_task_post_msg(GenericTask *task, const void *msg, size_t msg_
  */
 bool generic_task_is_running(GenericTask *task)
 {
-  if (!task || !task->state_mutex)
+  if (task == NULL || task->state_mutex == NULL)
   {
     return false;
   }
@@ -426,11 +406,11 @@ bool generic_task_is_running(GenericTask *task)
  */
 eGenericTaskState generic_task_get_state(GenericTask *task)
 {
-  if (!task || !task->state_mutex)
+  if (task == NULL || task->state_mutex == NULL)
   {
-    return TASK_STATE_STOPPED;
+    return TASK_STATE_ERROR;
   }
-  
+
   xSemaphoreTake(task->state_mutex, portMAX_DELAY);
   eGenericTaskState state = task->state;
   xSemaphoreGive(task->state_mutex);

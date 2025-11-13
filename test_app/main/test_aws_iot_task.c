@@ -44,7 +44,8 @@ TEST(aws_iot_task, initial_state)
 TEST(aws_iot_task, connect_to_broker)
 {
   aws_iot_connect();
-  vTaskDelay(pdMS_TO_TICKS(CONNECT_TIMEOUT_MS)); // Wait for connection attempt
+
+  TEST_ASSERT_EQUAL(ESP_OK, aws_iot_wait_for_connection(CONNECT_TIMEOUT_MS));
 
   TEST_ASSERT_TRUE(aws_iot_is_connected());
   TEST_ASSERT_FALSE(aws_iot_is_listening());
@@ -56,7 +57,7 @@ TEST(aws_iot_task, connect_to_broker)
 TEST(aws_iot_task, start_listening_for_messages)
 {
   aws_iot_connect();
-  vTaskDelay(pdMS_TO_TICKS(CONNECT_TIMEOUT_MS)); // Wait for connection attempt
+  TEST_ASSERT_EQUAL(ESP_OK, aws_iot_wait_for_connection(CONNECT_TIMEOUT_MS));
 
   aws_iot_start_listening();
   vTaskDelay(pdMS_TO_TICKS(DELAY_TIME_MS)); // Wait for listening to start

@@ -158,6 +158,27 @@ bool aws_iot_is_listening(void)
   return (keep_alive_task_handle != NULL);
 }
 
+/** @brief: Public API: Wait for AWS IoT connection with timeout
+ *  @param timeout_ms Maximum time to wait in milliseconds
+ *  @return ESP_OK if connected, ESP_ERR_TIMEOUT if timeout occurred
+ */
+esp_err_t aws_iot_wait_for_connection(unsigned int timeout_ms)
+{
+  const TickType_t start_time = xTaskGetTickCount();
+  const TickType_t timeout_ticks = pdMS_TO_TICKS(timeout_ms);
+
+  while ((xTaskGetTickCount() - start_time) < timeout_ticks)
+  {
+    if (aws_iot_is_connected())
+    {
+      return ESP_OK;
+    }
+    vTaskDelay(pdMS_TO_TICKS(100));
+  }
+
+  return ESP_ERR_TIMEOUT;
+}
+
 /** @brief AWS IoT Keep Alive Task */
 static void aws_iot_keep_alive_task()
 {

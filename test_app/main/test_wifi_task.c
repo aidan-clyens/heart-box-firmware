@@ -18,20 +18,6 @@
 #define DELAY_TIME_MS 500
 #define CONNECT_TIMEOUT_MS 30 * 1000
 
-static void wait_for_connection(unsigned int timeout_ms)
-{
-  TickType_t start_tick = xTaskGetTickCount();
-  while (xTaskGetTickCount() - start_tick < pdMS_TO_TICKS(timeout_ms))
-  {
-    if (wifi_task_is_connected())
-    {
-      return;
-    }
-    vTaskDelay(pdMS_TO_TICKS(100));
-  }
-  TEST_FAIL_MESSAGE("Timeout waiting for WiFi connection state change");
-}
-
 // Test group setup
 TEST_GROUP(wifi_task);
 TEST_SETUP(wifi_task)
@@ -108,7 +94,7 @@ TEST(wifi_task, start_sta_mode_valid_credentials)
 
   wifi_set_sta_credentials(TEST_WIFI_SSID, TEST_WIFI_PASSWORD);
 
-  wait_for_connection(CONNECT_TIMEOUT_MS);
+  wait_for_connection(CONNECT_TIMEOUT_MS, true);
 
   TEST_ASSERT_TRUE(wifi_task_is_started());
   TEST_ASSERT_TRUE(wifi_task_is_connected());
@@ -136,7 +122,7 @@ TEST(wifi_task, change_to_ap_mode)
 
   wifi_set_sta_credentials(TEST_WIFI_SSID, TEST_WIFI_PASSWORD);
 
-  wait_for_connection(CONNECT_TIMEOUT_MS);
+  wait_for_connection(CONNECT_TIMEOUT_MS, true);
 
   TEST_ASSERT_TRUE(wifi_task_is_started());
   TEST_ASSERT_TRUE(wifi_task_is_connected());

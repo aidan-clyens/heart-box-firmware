@@ -37,14 +37,21 @@ typedef enum
  * task that processes state transition events. Must be called once during
  * system initialization.
  * 
+ * @return ESP_OK on success, error code on failure
+ * 
  * @note Call after initializing NVS, GPIO, WiFi, and AWS IoT components
- * @note Blocking call - task starts immediately
  */
-void state_machine_task_init(void);
+esp_err_t state_machine_task_init(void);
 
-void state_machine_task_stop(void);
-
-bool state_machine_task_is_running(void);
+/**
+ * @brief Stop and clean up the State Machine task
+ * 
+ * Gracefully stops the state machine task and frees all allocated resources.
+ * After calling this, state_machine_task_init() can be called again to restart.
+ * 
+ * @return ESP_OK on success, error code on failure
+ */
+esp_err_t state_machine_task_deinit(void);
 
 /**
  * @brief Post an event to the State Machine task

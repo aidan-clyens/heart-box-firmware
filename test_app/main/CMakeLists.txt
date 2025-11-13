@@ -1,5 +1,6 @@
 idf_component_register(SRCS
                         "test_app_main.c"
+                        "test_aws_iot_task.c"
                         "test_generic_task.c"
                         "test_file_system.c"
                         "test_state_machine_task.c"

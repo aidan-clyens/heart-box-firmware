@@ -67,7 +67,7 @@ extern const char client_key_end[] asm("_binary_private_key_pem_key_end");
 // --- Module State ---
 static const char *TAG_AWS_IOT = "AWS_IOT_TASK";
 static const char *TAG_AWS_IOT_KEEP_ALIVE = "AWS_IOT_KEEP_ALIVE_TASK";
-static GenericTask aws_iot_task;
+static GenericTask *aws_iot_task = NULL;
 
 static const char *MSG_CLIENT_TAG = "client";
 static const char *MSG_BUTTON_TAG = "button";
@@ -96,13 +96,18 @@ static bool session_present = false;
 static EventGroupHandle_t mqtt_event_group = NULL;
 
 static TaskHandle_t keep_alive_task_handle = NULL;
+static volatile bool keep_alive_should_stop = false;
 
 /** @brief Post a command message to the AWS IoT task
  *  @param msg The message to post
  */
 static BaseType_t aws_iot_post_msg(AwsIotMsg_t msg)
 {
-  return generic_task_post_msg(&aws_iot_task, &msg, sizeof(AwsIotMsg_t));
+  if (aws_iot_task == NULL)
+  {
+    return pdFALSE;
+  }
+  return generic_task_post_msg(aws_iot_task, &msg, sizeof(AwsIotMsg_t));
 }
 
 /** @brief Public API: Request a connection to the configured AWS IoT broker */
@@ -137,12 +142,28 @@ void aws_iot_publish_button_released_event(void)
   aws_iot_post_msg(msg);
 }
 
+/** @brief Public API: Get the current MQTT connection status
+ *  @return Current MQTT connection status
+ */
+bool aws_iot_is_connected(void)
+{
+  return (mqtt_context.connectStatus == MQTTConnected);
+}
+
+/** @brief Public API: Check if AWS IoT task is listening for messages
+ *  @return true if listening, false otherwise
+ */
+bool aws_iot_is_listening(void)
+{
+  return (keep_alive_task_handle != NULL);
+}
+
 /** @brief AWS IoT Keep Alive Task */
 static void aws_iot_keep_alive_task()
 {
   ESP_LOGI(TAG_AWS_IOT_KEEP_ALIVE, "AWS IoT Keep Alive Task started.");
 
-  while (true)
+  while (!keep_alive_should_stop)
   {
     MQTTStatus_t mqtt_status = MQTT_ProcessLoop(&mqtt_context);
 
@@ -157,13 +178,17 @@ static void aws_iot_keep_alive_task()
 
       state_machine_post_event(APP_AWS_IOT_EVT_DISCONNECTED, APP_AWS_IOT);
 
-      ESP_LOGI(TAG_AWS_IOT_KEEP_ALIVE, "AWS IoT Keep Alive Task exiting.");
+      ESP_LOGI(TAG_AWS_IOT_KEEP_ALIVE, "AWS IoT Keep Alive Task exiting due to error.");
       keep_alive_task_handle = NULL;
       vTaskDelete(NULL);
     }
 
     vTaskDelay(pdMS_TO_TICKS(MQTT_KEEP_ALIVE_TIMER_INTERVAL_MS));
   }
+
+  ESP_LOGI(TAG_AWS_IOT_KEEP_ALIVE, "AWS IoT Keep Alive Task exiting gracefully.");
+  keep_alive_task_handle = NULL;
+  vTaskDelete(NULL);
 }
 
 /** @brief Establish a TLS connection and MQTT session with AWS IoT broker */
@@ -325,7 +350,8 @@ static void aws_iot_start_listening_cmd()
     return;
   }
 
-  // Start Keep Alive task
+  // Reset shutdown flag and start Keep Alive task
+  keep_alive_should_stop = false;
   xTaskCreate(aws_iot_keep_alive_task, TAG_AWS_IOT_KEEP_ALIVE, MQTT_KEEP_ALIVE_TASK_STACK_SIZE, NULL, 5, &keep_alive_task_handle);
 }
 
@@ -541,7 +567,17 @@ static esp_err_t aws_iot_on_init(GenericTask *self)
   MQTTStatus_t mqtt_status = MQTTSuccess;
   MQTTFixedBuffer_t network_buffer;
   TransportInterface_t transport = {0};
+  esp_err_t ret;
 
+  // Step 1: Create MQTT event group
+  mqtt_event_group = xEventGroupCreate();
+  if (mqtt_event_group == NULL)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Failed to create MQTT event group");
+    return ESP_ERR_NO_MEM;
+  }
+
+  // Step 2: Initialize transport interface
   transport.pNetworkContext = &network_context;
   transport.send = espTlsTransportSend;
   transport.recv = espTlsTransportRecv;
@@ -550,13 +586,7 @@ static esp_err_t aws_iot_on_init(GenericTask *self)
   network_buffer.pBuffer = buffer;
   network_buffer.size = MQTT_NETWORK_BUFFER_SIZE;
 
-  mqtt_event_group = xEventGroupCreate();
-  if (mqtt_event_group == NULL)
-  {
-    ESP_LOGE(TAG_AWS_IOT, "Failed to create MQTT event group");
-    return ESP_FAIL;
-  }
-
+  // Step 3: Initialize MQTT context
   mqtt_status = MQTT_Init(&mqtt_context,
                           &transport,
                           Clock_GetTimeMs,
@@ -566,9 +596,11 @@ static esp_err_t aws_iot_on_init(GenericTask *self)
   if (mqtt_status != MQTTSuccess)
   {
     ESP_LOGE(TAG_AWS_IOT, "MQTT_Init failed: Status = %s.", MQTT_Status_strerror(mqtt_status));
-    return ESP_FAIL;
+    ret = ESP_FAIL;
+    goto cleanup_event_group;
   }
 
+  // Step 4: Initialize stateful QoS
   mqtt_status = MQTT_InitStatefulQoS(&mqtt_context,
                                      outgoing_publish_records,
                                      MQTT_OUTGOING_PUBLISH_RECORD_LEN,
@@ -578,11 +610,13 @@ static esp_err_t aws_iot_on_init(GenericTask *self)
   if (mqtt_status != MQTTSuccess)
   {
     ESP_LOGE(TAG_AWS_IOT, "MQTT_InitStatefulQoS failed: Status = %s.", MQTT_Status_strerror(mqtt_status));
-    return ESP_FAIL;
+    ret = ESP_FAIL;
+    goto cleanup_event_group;
   }
 
   ESP_LOGI(TAG_AWS_IOT, "MQTT initialized successfully.");
 
+  // Step 5: Initialize network context
   network_context.pcHostname = MQTT_BROKER_ENDPOINT;
   network_context.xPort = MQTT_PORT;
   network_context.pxTls = NULL;
@@ -592,10 +626,11 @@ static esp_err_t aws_iot_on_init(GenericTask *self)
   if (network_context.xTlsContextSemaphore == NULL)
   {
     ESP_LOGE(TAG_AWS_IOT, "Failed to create TLS context semaphore.");
-    return ESP_FAIL;
+    ret = ESP_ERR_NO_MEM;
+    goto cleanup_event_group;
   }
   
-  // Initialize TLS connection credentials
+  // Step 6: Initialize TLS connection credentials
   network_context.pcServerRootCA = root_cert_auth_start;
   network_context.pcServerRootCASize = root_cert_auth_end - root_cert_auth_start;
   network_context.pcClientCert = client_cert_start;
@@ -608,7 +643,8 @@ static esp_err_t aws_iot_on_init(GenericTask *self)
       network_context.pcClientKey == NULL || network_context.pcClientKeySize <= 0)
   {
     ESP_LOGE(TAG_AWS_IOT, "TLS credentials are not properly configured.");
-    return ESP_FAIL;
+    ret = ESP_FAIL;
+    goto cleanup_semaphore;
   }
 
   ESP_LOGI(TAG_AWS_IOT, "AWS IoT TLS credentials for client %s:", MQTT_CLIENT_IDENTIFIER);
@@ -621,6 +657,7 @@ static esp_err_t aws_iot_on_init(GenericTask *self)
 
   network_context.pAlpnProtos = NULL;
 
+  // Step 7: Initialize MQTT connection info
   connect_info.cleanSession = true;
   connect_info.pClientIdentifier = MQTT_CLIENT_IDENTIFIER;
   connect_info.clientIdentifierLength = MQTT_CLIENT_IDENTIFIER_LENGTH;
@@ -628,31 +665,94 @@ static esp_err_t aws_iot_on_init(GenericTask *self)
 
   ESP_LOGI(TAG_AWS_IOT, "AWS IoT Task initialized successfully.");
   return ESP_OK;
+
+cleanup_semaphore:
+  if (network_context.xTlsContextSemaphore != NULL)
+  {
+    vSemaphoreDelete(network_context.xTlsContextSemaphore);
+    network_context.xTlsContextSemaphore = NULL;
+  }
+cleanup_event_group:
+  vEventGroupDelete(mqtt_event_group);
+  mqtt_event_group = NULL;
+  return ret;
 }
 
 static esp_err_t aws_iot_on_stop(GenericTask *self)
 {
   ESP_LOGI(TAG_AWS_IOT, "Stopping AWS IoT Task...");
+  esp_err_t final_ret = ESP_OK;
 
-  // Disconnect MQTT if connected
-  if (mqtt_context.connectStatus == MQTTConnected)
+  // Step 1: Signal Keep Alive task to stop gracefully
+  if (keep_alive_task_handle != NULL)
   {
-    if (MQTT_Disconnect(&mqtt_context) != MQTTSuccess)
+    ESP_LOGI(TAG_AWS_IOT, "Signaling Keep Alive task to stop...");
+    keep_alive_should_stop = true;
+    
+    // Wait for the task to exit (with timeout)
+    const TickType_t timeout = pdMS_TO_TICKS(2000);  // 2 second timeout
+    const TickType_t start_time = xTaskGetTickCount();
+    
+    while (keep_alive_task_handle != NULL && 
+           (xTaskGetTickCount() - start_time) < timeout)
     {
-      ESP_LOGE(TAG_AWS_IOT, "Failed to disconnect MQTT cleanly.");
-      return ESP_FAIL;
+      vTaskDelay(pdMS_TO_TICKS(100));
+    }
+    
+    // If task didn't exit gracefully, force delete it
+    if (keep_alive_task_handle != NULL)
+    {
+      ESP_LOGW(TAG_AWS_IOT, "Keep Alive task didn't exit gracefully, force deleting...");
+      vTaskDelete(keep_alive_task_handle);
+      keep_alive_task_handle = NULL;
+    }
+    else
+    {
+      ESP_LOGI(TAG_AWS_IOT, "Keep Alive task stopped gracefully.");
     }
   }
 
-  // Disconnect TLS
-  if (xTlsDisconnect(&network_context) != TLS_TRANSPORT_SUCCESS)
+  // Step 2: Disconnect MQTT if connected
+  if (mqtt_context.connectStatus == MQTTConnected)
   {
-    ESP_LOGE(TAG_AWS_IOT, "Failed to disconnect TLS cleanly.");
-    return ESP_FAIL;
+    MQTTStatus_t mqtt_status = MQTT_Disconnect(&mqtt_context);
+    if (mqtt_status != MQTTSuccess)
+    {
+      ESP_LOGE(TAG_AWS_IOT, "Failed to disconnect MQTT cleanly: %s", MQTT_Status_strerror(mqtt_status));
+      final_ret = ESP_FAIL;
+      // Continue cleanup anyway
+    }
   }
 
+  // Step 3: Disconnect TLS
+  TlsTransportStatus_t tls_status = xTlsDisconnect(&network_context);
+  if (tls_status != TLS_TRANSPORT_SUCCESS)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Failed to disconnect TLS cleanly: Status = %d", tls_status);
+    final_ret = ESP_FAIL;
+    // Continue cleanup anyway
+  }
+
+  // Step 4: Delete TLS context semaphore
+  if (network_context.xTlsContextSemaphore != NULL)
+  {
+    vSemaphoreDelete(network_context.xTlsContextSemaphore);
+    network_context.xTlsContextSemaphore = NULL;
+  }
+
+  // Step 5: Delete event group
+  if (mqtt_event_group != NULL)
+  {
+    vEventGroupDelete(mqtt_event_group);
+    mqtt_event_group = NULL;
+  }
+
+  // Step 6: Reset network context and shutdown flag
+  network_context.pxTls = NULL;
+  keep_alive_should_stop = false;
+
   ESP_LOGI(TAG_AWS_IOT, "AWS IoT Task stopped.");
-  return ESP_OK;
+  return final_ret;
 }
 
 /** @brief Handle messages for AWS IoT Task
@@ -690,22 +790,50 @@ static void aws_iot_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
 }
 
 /** @brief Create AWS IoT Task */
-void aws_iot_task_init(void)
+esp_err_t aws_iot_task_init(void)
 {
-  aws_iot_task.name = TAG_AWS_IOT;
-  aws_iot_task.on_init = aws_iot_on_init;
-  aws_iot_task.on_stop = aws_iot_on_stop;
-  aws_iot_task.on_message = aws_iot_on_message;
-  aws_iot_task.item_size = sizeof(AwsIotMsg_t);
-  generic_task_start(&aws_iot_task, MQTT_AWS_IOT_TASK_STACK_SIZE, 10);
+  aws_iot_task = generic_task_create(
+      TAG_AWS_IOT,
+      sizeof(AwsIotMsg_t),
+      aws_iot_on_init,
+      aws_iot_on_message,
+      aws_iot_on_stop);
+
+  if (aws_iot_task == NULL)
+  {
+    return ESP_ERR_NO_MEM;
+  }
+
+  esp_err_t ret = generic_task_start(aws_iot_task, MQTT_AWS_IOT_TASK_STACK_SIZE, 10);
+  if (ret != ESP_OK)
+  {
+    generic_task_delete(aws_iot_task);
+    aws_iot_task = NULL;
+    return ret;
+  }
+
+  return ESP_OK;
 }
 
-void aws_iot_task_stop(void)
+esp_err_t aws_iot_task_deinit(void)
 {
-  generic_task_stop(&aws_iot_task);
-}
+  if (aws_iot_task == NULL)
+  {
+    return ESP_ERR_INVALID_STATE;
+  }
 
-bool aws_iot_task_is_running(void)
-{
-  return generic_task_is_running(&aws_iot_task);
+  esp_err_t ret = generic_task_stop(aws_iot_task);
+  if (ret != ESP_OK)
+  {
+    return ret;
+  }
+
+  ret = generic_task_delete(aws_iot_task);
+  if (ret != ESP_OK)
+  {
+    return ret;
+  }
+
+  aws_iot_task = NULL;
+  return ESP_OK;
 }

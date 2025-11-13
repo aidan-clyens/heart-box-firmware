@@ -11,12 +11,9 @@
 
 // #define DEBUG_MODE
 
-#define STATE_MACHINE_TASK_STACK_SIZE 4096
-#define STATE_MACHINE_TASK_PRIORITY   15
-
 static const char *TAG = "STATE_MACHINE_TASK";
 
-static GenericTask sm_task;
+static GenericTask *sm_task = NULL;
 static httpd_handle_t sm_http_server = NULL;
 static eAppState_t current_state = STATE_IDLE;
 
@@ -26,13 +23,20 @@ static eAppState_t current_state = STATE_IDLE;
  */
 BaseType_t state_machine_post_event(eAppMsgType_t type, eAppMsgSource_t source)
 {
+  if (sm_task == NULL)
+  {
+    ESP_LOGE(TAG, "State machine task not initialized");
+    return pdFALSE;
+  }
+
   if (type < 0 || source < 0)
   {
     ESP_LOGE(TAG, "Invalid event type or source");
     return pdFALSE;
   }
+  
   AppMsg_t app_msg = {.type = type, .source = source};
-  return generic_task_post_msg(&sm_task, &app_msg, sm_task.item_size);
+  return generic_task_post_msg(sm_task, &app_msg, sizeof(AppMsg_t));
 }
 
 /** @brief Get the current application state
@@ -208,6 +212,10 @@ static void state_machine_enter_state(eAppState_t new_state)
 static esp_err_t state_machine_on_init(GenericTask *self)
 {
   (void)self; // Not used
+  
+  current_state = STATE_IDLE;
+  state_machine_enter_state(current_state);
+  
   ESP_LOGI(TAG, "State Machine Task initialized");
   return ESP_OK;
 }
@@ -362,28 +370,71 @@ static void state_machine_on_message(GenericTask *self, void *msg_buf, size_t ms
   }
 }
 
-/** @brief Create State Machine Task
+/** @brief Initialize and start State Machine Task
+ *  @return ESP_OK on success, error code on failure
  */
-void state_machine_task_init(void)
+esp_err_t state_machine_task_init(void)
 {
-  sm_task.name = TAG;
-  sm_task.on_init = state_machine_on_init;
-  sm_task.on_stop = state_machine_on_stop;
-  sm_task.on_message = state_machine_on_message;
-  sm_task.item_size = sizeof(AppMsg_t);
+  ESP_LOGI(TAG, "Initializing State Machine task...");
 
-  current_state = STATE_IDLE;
-  state_machine_enter_state(current_state);
+  // Create GenericTask instance
+  sm_task = generic_task_create(
+      TAG,
+      sizeof(AppMsg_t),
+      state_machine_on_init,
+      state_machine_on_message,
+      state_machine_on_stop);
 
-  generic_task_start(&sm_task, STATE_MACHINE_TASK_STACK_SIZE, STATE_MACHINE_TASK_PRIORITY);
+  if (sm_task == NULL)
+  {
+    ESP_LOGE(TAG, "Failed to create State Machine GenericTask");
+    return ESP_ERR_NO_MEM;
+  }
+
+  // Start the task
+  esp_err_t ret = generic_task_start(sm_task, 4096, 15);
+  if (ret != ESP_OK)
+  {
+    ESP_LOGE(TAG, "Failed to start State Machine GenericTask: %s", esp_err_to_name(ret));
+    generic_task_delete(sm_task);
+    sm_task = NULL;
+    return ret;
+  }
+
+  ESP_LOGI(TAG, "State Machine task started successfully");
+  return ESP_OK;
 }
 
-void state_machine_task_stop(void)
+/** @brief Stop and clean up State Machine Task
+ *  @return ESP_OK on success, error code on failure
+ */
+esp_err_t state_machine_task_deinit(void)
 {
-  generic_task_stop(&sm_task);
-}
+  if (sm_task == NULL)
+  {
+    ESP_LOGW(TAG, "State Machine task not initialized");
+    return ESP_ERR_INVALID_STATE;
+  }
 
-bool state_machine_task_is_running(void)
-{
-  return generic_task_is_running(&sm_task);
+  ESP_LOGI(TAG, "Stopping State Machine task...");
+
+  // Stop the task
+  esp_err_t ret = generic_task_stop(sm_task);
+  if (ret != ESP_OK)
+  {
+    ESP_LOGE(TAG, "Failed to stop State Machine task: %s", esp_err_to_name(ret));
+    return ret;
+  }
+
+  // Delete the task
+  ret = generic_task_delete(sm_task);
+  if (ret != ESP_OK)
+  {
+    ESP_LOGE(TAG, "Failed to delete State Machine task: %s", esp_err_to_name(ret));
+    return ret;
+  }
+
+  sm_task = NULL;
+  ESP_LOGI(TAG, "State Machine task stopped and cleaned up");
+  return ESP_OK;
 }

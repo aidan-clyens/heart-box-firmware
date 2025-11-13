@@ -4,12 +4,20 @@
 #include "unity_fixture.h"
 
 #include "wifi_task.h"
-#include "gpio_task.h"
-#include "aws_iot_task.h"
-#include "state_machine_task.h"
 
-void stop_all_tasks()
+void wait_for_connection(unsigned int timeout_ms, bool expect_success)
 {
-  wifi_task_deinit();
-  gpio_task_deinit();
+  TickType_t start_tick = xTaskGetTickCount();
+  while (xTaskGetTickCount() - start_tick < pdMS_TO_TICKS(timeout_ms))
+  {
+    if (wifi_task_is_connected())
+    {
+      return;
+    }
+    vTaskDelay(pdMS_TO_TICKS(100));
+  }
+
+  if (expect_success) {
+    TEST_FAIL_MESSAGE("Timeout waiting for WiFi connection state change");
+  }
 }

@@ -24,11 +24,6 @@ TEST_TEAR_DOWN(file_system)
   file_system_clear(TEST_NEW_KEY);
 }
 
-TEST(file_system, setup)
-{
-  stop_all_tasks();
-}
-
 /** @brief Test reading a string with a null key
  *  @test Expected: Returns NULL
  */
@@ -134,7 +129,6 @@ TEST(file_system, write_string_key_exists)
 
 TEST_GROUP_RUNNER(file_system)
 {
-  RUN_TEST_CASE(file_system, setup);
   RUN_TEST_CASE(file_system, read_string_null_key);
   RUN_TEST_CASE(file_system, read_string_key_does_not_exist);
   RUN_TEST_CASE(file_system, read_string_returns_valid_value);

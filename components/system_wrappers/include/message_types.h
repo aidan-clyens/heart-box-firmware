@@ -12,6 +12,7 @@ extern "C"
 #define MAX_SSID_LEN        32
 #define MAX_PASSPHRASE_LEN  64
 #define MAX_HOSTNAME_LEN    64
+#define MAX_URL_LEN         128
 
 static const char *NVS_SSID_KEY = "wifi_ssid";
 static const char *NVS_PASSWORD_KEY = "wifi_password";
@@ -118,6 +119,10 @@ typedef struct
 typedef struct
 {
   eAppMsgType_t type;
+  union
+  {
+    char broker_url[MAX_URL_LEN]; /**< For APP_AWS_IOT_CMD_CONNECT */
+  } data;
 } AwsIotMsg_t;
 
 /** @struct AppMsg_t

@@ -9,6 +9,10 @@
 
 #include "esp_log.h"
 
+#ifndef MQTT_BROKER_ENDPOINT
+#error "MQTT_BROKER_ENDPOINT must be defined in sdkconfig"
+#endif
+
 // #define DEBUG_MODE
 
 static const char *TAG = "STATE_MACHINE_TASK";
@@ -306,7 +310,7 @@ static void state_machine_on_message(GenericTask *self, void *msg_buf, size_t ms
     else if (event == APP_EVT_PING_SUCCESS)
     {
       ESP_LOGI(TAG, "Received Ping Success event");
-      aws_iot_connect();
+      aws_iot_connect(MQTT_BROKER_ENDPOINT);
     }
     else if (event == APP_EVT_PING_TIMEOUT)
     {

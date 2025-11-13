@@ -17,6 +17,10 @@
 #error "TEST_WIFI_PASSWORD must be defined for these tests to run"
 #endif
 
+#ifndef MQTT_BROKER_ENDPOINT
+#error "MQTT_BROKER_ENDPOINT must be defined in sdkconfig"
+#endif
+
 #define DELAY_TIME_MS 500
 #define CONNECT_TIMEOUT_MS 20000
 
@@ -106,7 +110,7 @@ TEST(state_machine_task, connect_to_aws_iot)
   state = state_machine_get_current_app_state();
   TEST_ASSERT_EQUAL(STATE_WIFI_CONNECTED, state);
 
-  aws_iot_connect();
+  aws_iot_connect(MQTT_BROKER_ENDPOINT);
 
   // Wait for AWS IoT connection
   wait_for_connection(CONNECT_TIMEOUT_MS, true);

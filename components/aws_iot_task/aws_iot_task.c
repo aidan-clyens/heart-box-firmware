@@ -25,10 +25,6 @@
 #define MQTT_KEEP_ALIVE_TASK_STACK_SIZE 4096
 
 // User definitions
-#ifndef MQTT_BROKER_ENDPOINT
-#error "MQTT_BROKER_ENDPOINT must be defined in sdkconfig"
-#endif
-
 #ifndef MQTT_CLIENT_IDENTIFIER
 #define MQTT_CLIENT_IDENTIFIER "Default"
 #endif // MQTT_CLIENT_IDENTIFIER
@@ -113,10 +109,11 @@ static BaseType_t aws_iot_post_msg(AwsIotMsg_t msg)
 }
 
 /** @brief Public API: Request a connection to the configured AWS IoT broker */
-void aws_iot_connect(void)
+void aws_iot_connect(const char *broker_url)
 {
   AwsIotMsg_t msg;
   msg.type = APP_AWS_IOT_CMD_CONNECT;
+  strncpy(msg.data.broker_url, broker_url, MAX_URL_LEN);
   aws_iot_post_msg(msg);
 }
 
@@ -244,10 +241,17 @@ static void aws_iot_keep_alive_task()
 }
 
 /** @brief Establish a TLS connection and MQTT session with AWS IoT broker */
-static MQTTStatus_t aws_iot_establish_mqtt_connection(void)
+static MQTTStatus_t aws_iot_establish_mqtt_connection(const char *broker_url)
 {
+  // Validate broker URL
+  if (broker_url == NULL || strlen(broker_url) == 0)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Invalid broker URL");
+    return MQTTBadParameter;
+  }
+
   MQTTStatus_t mqtt_status;
-  ESP_LOGI(TAG_AWS_IOT, "Establishing TLS connection to %s...", MQTT_BROKER_ENDPOINT);
+  ESP_LOGI(TAG_AWS_IOT, "Establishing TLS connection to %s...", broker_url);
 
   xSemaphoreTake(network_context.xTlsContextSemaphore, portMAX_DELAY);
   connect_info.cleanSession = !session_present;
@@ -367,14 +371,23 @@ static MQTTStatus_t aws_iot_subscribe_to_topic()
 }
 
 /** @brief Handle the AWS IoT connect command */
-static void aws_iot_connect_cmd(void)
+static void aws_iot_connect_cmd(const char* broker_url)
 {
   aws_iot_statistics.connection_attempts++;
 
-  MQTTStatus_t mqtt_status = aws_iot_establish_mqtt_connection();
+  // Validate broker URL
+  if (broker_url == NULL || strlen(broker_url) == 0)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Invalid broker URL");
+    return;
+  }
+
+  network_context.pcHostname = broker_url;
+
+  MQTTStatus_t mqtt_status = aws_iot_establish_mqtt_connection(broker_url);
   if (mqtt_status != MQTTSuccess)
   {
-    ESP_LOGE(TAG_AWS_IOT, "Failed to establish TLS/MQTT session to AWS IoT broker %s: %s", MQTT_BROKER_ENDPOINT, MQTT_Status_strerror(mqtt_status));
+    ESP_LOGE(TAG_AWS_IOT, "Failed to establish TLS/MQTT session to AWS IoT broker %s: %s", broker_url, MQTT_Status_strerror(mqtt_status));
     state_machine_post_event(APP_AWS_IOT_EVT_DISCONNECTED, APP_AWS_IOT);
     return;
   }
@@ -392,7 +405,7 @@ static void aws_iot_connect_cmd(void)
   }
 
   state_machine_post_event(APP_AWS_IOT_EVT_CONNECTED, APP_AWS_IOT);
-  ESP_LOGI(TAG_AWS_IOT, "Connected to AWS IoT %s successfully.", MQTT_BROKER_ENDPOINT);
+  ESP_LOGI(TAG_AWS_IOT, "Connected to AWS IoT %s successfully.", broker_url);
 
   aws_iot_statistics.successful_connections++;
 }
@@ -677,7 +690,6 @@ static esp_err_t aws_iot_on_init(GenericTask *self)
   ESP_LOGI(TAG_AWS_IOT, "MQTT initialized successfully.");
 
   // Step 5: Initialize network context
-  network_context.pcHostname = MQTT_BROKER_ENDPOINT;
   network_context.xPort = MQTT_PORT;
   network_context.pxTls = NULL;
   network_context.xTlsContextSemaphore = xSemaphoreCreateMutexStatic(&tls_context_semaphore);
@@ -848,7 +860,7 @@ static void aws_iot_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
   switch (msg->type)
   {
     case APP_AWS_IOT_CMD_CONNECT:
-      aws_iot_connect_cmd();
+      aws_iot_connect_cmd(msg->data.broker_url);
       break;
     case APP_AWS_IOT_CMD_START_LISTENING:
       aws_iot_start_listening_cmd();

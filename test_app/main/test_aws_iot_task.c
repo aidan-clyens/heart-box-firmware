@@ -9,6 +9,10 @@
 
 #include "esp_log.h"
 
+#ifndef MQTT_BROKER_ENDPOINT
+#error "MQTT_BROKER_ENDPOINT must be defined in sdkconfig"
+#endif
+
 #define DELAY_TIME_MS 500
 #define CONNECT_TIMEOUT_MS 30 * 1000
 
@@ -52,7 +56,7 @@ TEST(aws_iot_task, connect_to_broker)
 {
   ESP_LOGI(TAG, "Starting test: connect_to_broker");
 
-  aws_iot_connect();
+  aws_iot_connect(MQTT_BROKER_ENDPOINT);
   TEST_ASSERT_EQUAL(ESP_OK, aws_iot_wait_for_connection(CONNECT_TIMEOUT_MS));
   ESP_LOGI(TAG, "AWS IoT connected");
 
@@ -67,7 +71,7 @@ TEST(aws_iot_task, start_listening_for_messages)
 {
   ESP_LOGI(TAG, "Starting test: start_listening_for_messages");
 
-  aws_iot_connect();
+  aws_iot_connect(MQTT_BROKER_ENDPOINT);
   TEST_ASSERT_EQUAL(ESP_OK, aws_iot_wait_for_connection(CONNECT_TIMEOUT_MS));
   ESP_LOGI(TAG, "AWS IoT connected");
 
@@ -97,7 +101,7 @@ TEST(aws_iot_task, publish_button_events)
 {
   ESP_LOGI(TAG, "Starting test: publish_button_events");
 
-  aws_iot_connect();
+  aws_iot_connect(MQTT_BROKER_ENDPOINT);
   TEST_ASSERT_EQUAL(ESP_OK, aws_iot_wait_for_connection(CONNECT_TIMEOUT_MS));
   ESP_LOGI(TAG, "AWS IoT connected");
 

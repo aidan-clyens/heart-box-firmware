@@ -31,7 +31,7 @@ esp_err_t aws_iot_task_init(void);
 esp_err_t aws_iot_task_deinit(void);
 
 /** @brief Public API: Request a connection to the configured AWS IoT broker */
-void aws_iot_connect(void);
+void aws_iot_connect(const char* broker_url);
 
 /** @brief Public API: Start listening for incoming MQTT messages from AWS IoT */
 void aws_iot_start_listening(void);

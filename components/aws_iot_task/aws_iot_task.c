@@ -98,6 +98,8 @@ static EventGroupHandle_t mqtt_event_group = NULL;
 static TaskHandle_t keep_alive_task_handle = NULL;
 static volatile bool keep_alive_should_stop = false;
 
+static AwsIotStatistics_t aws_iot_statistics = {0};
+
 /** @brief Post a command message to the AWS IoT task
  *  @param msg The message to post
  */
@@ -177,6 +179,35 @@ esp_err_t aws_iot_wait_for_connection(unsigned int timeout_ms)
   }
 
   return ESP_ERR_TIMEOUT;
+}
+
+/** @brief: Public API: Wait for AWS IoT listening state with timeout
+ *  @param timeout_ms Maximum time to wait in milliseconds
+ *  @return ESP_OK if listening, ESP_ERR_TIMEOUT if timeout occurred
+ */
+esp_err_t aws_iot_wait_for_listening(unsigned int timeout_ms)
+{
+  const TickType_t start_time = xTaskGetTickCount();
+  const TickType_t timeout_ticks = pdMS_TO_TICKS(timeout_ms);
+
+  while ((xTaskGetTickCount() - start_time) < timeout_ticks)
+  {
+    if (aws_iot_is_listening())
+    {
+      return ESP_OK;
+    }
+    vTaskDelay(pdMS_TO_TICKS(100));
+  }
+
+  return ESP_ERR_TIMEOUT;
+}
+
+/** @brief Public API: Retrieve AWS IoT task statistics
+ *  @return Structure containing AWS IoT task statistics
+ */
+AwsIotStatistics_t aws_iot_get_statistics(void)
+{
+  return aws_iot_statistics;
 }
 
 /** @brief AWS IoT Keep Alive Task */
@@ -338,6 +369,8 @@ static MQTTStatus_t aws_iot_subscribe_to_topic()
 /** @brief Handle the AWS IoT connect command */
 static void aws_iot_connect_cmd(void)
 {
+  aws_iot_statistics.connection_attempts++;
+
   MQTTStatus_t mqtt_status = aws_iot_establish_mqtt_connection();
   if (mqtt_status != MQTTSuccess)
   {
@@ -360,6 +393,8 @@ static void aws_iot_connect_cmd(void)
 
   state_machine_post_event(APP_AWS_IOT_EVT_CONNECTED, APP_AWS_IOT);
   ESP_LOGI(TAG_AWS_IOT, "Connected to AWS IoT %s successfully.", MQTT_BROKER_ENDPOINT);
+
+  aws_iot_statistics.successful_connections++;
 }
 
 /** @brief Handle the AWS IoT start listening command */
@@ -440,6 +475,8 @@ static void aws_iot_publish_button_event_cmd(const char* state)
 
   ESP_LOGI(TAG_AWS_IOT, "Published button event to topic %s: %s", MQTT_TOPIC, payload);
 
+  aws_iot_statistics.messages_published++;
+
   free((void *)payload);
 }
 
@@ -473,6 +510,8 @@ static void aws_iot_handle_publish_packet(MQTTPublishInfo_t * p_publish_info, un
     ESP_LOGI(TAG_AWS_IOT, "Received button event from client: %s, button: %s",
              client_json->valuestring,
              button_json->valuestring);
+
+    aws_iot_statistics.messages_received++;
 
     // If client identifier does not match this device, notify the State Machine task
     if (strcmp(client_json->valuestring, MQTT_CLIENT_IDENTIFIER) != 0)
@@ -743,6 +782,10 @@ static esp_err_t aws_iot_on_stop(GenericTask *self)
       final_ret = ESP_FAIL;
       // Continue cleanup anyway
     }
+    else
+    {
+      ESP_LOGI(TAG_AWS_IOT, "MQTT disconnected successfully."); 
+    }
   }
 
   // Step 3: Disconnect TLS
@@ -753,12 +796,18 @@ static esp_err_t aws_iot_on_stop(GenericTask *self)
     final_ret = ESP_FAIL;
     // Continue cleanup anyway
   }
+  else
+  {
+    ESP_LOGI(TAG_AWS_IOT, "TLS disconnected successfully.");
+  }
 
   // Step 4: Delete TLS context semaphore
   if (network_context.xTlsContextSemaphore != NULL)
   {
     vSemaphoreDelete(network_context.xTlsContextSemaphore);
     network_context.xTlsContextSemaphore = NULL;
+
+    ESP_LOGI(TAG_AWS_IOT, "TLS context semaphore deleted.");
   }
 
   // Step 5: Delete event group
@@ -766,11 +815,16 @@ static esp_err_t aws_iot_on_stop(GenericTask *self)
   {
     vEventGroupDelete(mqtt_event_group);
     mqtt_event_group = NULL;
+
+    ESP_LOGI(TAG_AWS_IOT, "MQTT event group deleted.");
   }
 
   // Step 6: Reset network context and shutdown flag
   network_context.pxTls = NULL;
   keep_alive_should_stop = false;
+
+  // Step 7: Clear statistics
+  (void)memset(&aws_iot_statistics, 0, sizeof(aws_iot_statistics));
 
   ESP_LOGI(TAG_AWS_IOT, "AWS IoT Task stopped.");
   return final_ret;

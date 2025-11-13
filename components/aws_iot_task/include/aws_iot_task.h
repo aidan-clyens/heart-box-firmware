@@ -9,6 +9,17 @@ extern "C"
 #include "freertos/FreeRTOS.h"
 #include "esp_err.h"
 
+/** @struct AwsIotStatistics_t 
+ *  @brief Structure to hold AWS IoT task statistics
+ */
+typedef struct
+{
+  unsigned int connection_attempts;       /**< Number of connection attempts made */
+  unsigned int successful_connections;    /**< Number of successful connections */
+  unsigned int messages_published;        /**< Total number of messages published */
+  unsigned int messages_received;         /**< Total number of messages received */
+} AwsIotStatistics_t;
+
 /** @brief Public API: Initialize and start the AWS IoT task
  *  @return ESP_OK on success, error code on failure
  */
@@ -46,6 +57,17 @@ bool aws_iot_is_listening(void);
  *  @return ESP_OK if connected, ESP_ERR_TIMEOUT if timeout occurred
  */
 esp_err_t aws_iot_wait_for_connection(unsigned int timeout_ms);
+
+/** @brief: Public API: Wait for AWS IoT listening state with timeout
+ *  @param timeout_ms Maximum time to wait in milliseconds
+ *  @return ESP_OK if listening, ESP_ERR_TIMEOUT if timeout occurred
+ */
+esp_err_t aws_iot_wait_for_listening(unsigned int timeout_ms);
+
+/** @brief Public API: Retrieve AWS IoT task statistics
+ *  @return Structure containing AWS IoT task statistics
+ */
+AwsIotStatistics_t aws_iot_get_statistics(void);
 
 #ifdef __cplusplus
 }

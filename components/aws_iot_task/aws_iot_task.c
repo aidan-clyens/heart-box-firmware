@@ -73,6 +73,7 @@ static const char *MSG_BUTTON_RELEASED = "released";
 // MQTT connection
 static MQTTContext_t mqtt_context = {0};
 static MQTTConnectInfo_t connect_info = {0};
+static char *mqtt_broker_url = NULL;
 
 // Network
 static NetworkContext_t network_context = {0};
@@ -82,6 +83,7 @@ static StaticSemaphore_t tls_context_semaphore;
 // MQTT subscriptions
 static MQTTSubscribeInfo_t subscription_list[1];
 static unsigned short subscribe_packet_identifier = 0U;
+static char *mqtt_topic = NULL;
 
 // MQTT message queues
 static MQTTPubAckInfo_t outgoing_publish_records[MQTT_OUTGOING_PUBLISH_RECORD_LEN];
@@ -114,6 +116,15 @@ void aws_iot_connect(const char *broker_url)
   AwsIotMsg_t msg;
   msg.type = APP_AWS_IOT_CMD_CONNECT;
   strncpy(msg.data.broker_url, broker_url, MAX_URL_LEN);
+  aws_iot_post_msg(msg);
+}
+
+/** @brief Public API: Subscribe to a topic on AWS IoT */
+void aws_iot_subscribe_to_topic(const char *topic)
+{
+  AwsIotMsg_t msg;
+  msg.type = APP_AWS_IOT_CMD_SUBSCRIBE;
+  strncpy(msg.data.topic, topic, MAX_HOSTNAME_LEN);
   aws_iot_post_msg(msg);
 }
 
@@ -204,12 +215,12 @@ esp_err_t aws_iot_wait_for_listening(unsigned int timeout_ms)
  */
 const char *aws_iot_get_mqtt_broker_url(void)
 {
-  if (network_context.pcHostname == NULL)
+  if (mqtt_broker_url == NULL || mqtt_broker_url[0] == '\0')
   {
     return "";
   }
 
-  return network_context.pcHostname;
+  return mqtt_broker_url;
 }
 
 /** @brief Public API: Get the current MQTT topic
@@ -217,14 +228,13 @@ const char *aws_iot_get_mqtt_broker_url(void)
  */
 const char *aws_iot_get_mqtt_topic(void)
 {
-  if (subscription_list[0].pTopicFilter == NULL)
+  if (mqtt_topic == NULL || mqtt_topic[0] == '\0')
   {
     return "";
   }
 
-  return subscription_list[0].pTopicFilter;
+  return mqtt_topic;
 }
-
 
 /** @brief Public API: Retrieve AWS IoT task statistics
  *  @return Structure containing AWS IoT task statistics
@@ -281,6 +291,7 @@ static MQTTStatus_t aws_iot_establish_mqtt_connection(const char *broker_url)
   ESP_LOGI(TAG_AWS_IOT, "Establishing TLS connection to %s...", broker_url);
 
   xSemaphoreTake(network_context.xTlsContextSemaphore, portMAX_DELAY);
+  network_context.pcHostname = broker_url;
   connect_info.cleanSession = !session_present;
   xSemaphoreGive(network_context.xTlsContextSemaphore);
 
@@ -325,17 +336,23 @@ static MQTTStatus_t aws_iot_establish_mqtt_connection(const char *broker_url)
 }
 
 /** @brief Subscribe to the configured AWS IoT topic */
-static MQTTStatus_t aws_iot_subscribe_to_topic()
+static void aws_iot_subscribe_to_topic_cmd(const char* topic)
 {
   MQTTStatus_t mqtt_status;
-  ESP_LOGI(TAG_AWS_IOT, "Subscribing to topic %s...", MQTT_TOPIC);
+  ESP_LOGI(TAG_AWS_IOT, "Subscribing to topic %s...", topic);
 
+  // Free previous topic if it exists
+  if (mqtt_topic != NULL)
+  {
+    free(mqtt_topic);
+    mqtt_topic = NULL;
+  }
   (void)memset((void *)subscription_list, 0x00, sizeof(subscription_list));
 
   // Subscribe to one topic
   subscription_list[0].qos = MQTTQoS1;
-  subscription_list[0].pTopicFilter = MQTT_TOPIC;
-  subscription_list[0].topicFilterLength = MQTT_TOPIC_LENGTH;
+  subscription_list[0].pTopicFilter = topic;
+  subscription_list[0].topicFilterLength = strlen(topic);
 
   // Generate a unique packet identifier for the SUBSCRIBE packet
   subscribe_packet_identifier = MQTT_GetPacketId(&mqtt_context);
@@ -349,7 +366,8 @@ static MQTTStatus_t aws_iot_subscribe_to_topic()
 
   if (mqtt_status != MQTTSuccess)
   {
-    return mqtt_status;
+    ESP_LOGE(TAG_AWS_IOT, "Failed to send SUBSCRIBE packet: %s", MQTT_Status_strerror(mqtt_status));
+    return;
   }
 
   // Wait for SUBACK and verify subscription
@@ -373,7 +391,7 @@ static MQTTStatus_t aws_iot_subscribe_to_topic()
     {
       ESP_LOGE(TAG_AWS_IOT, "MQTT_ProcessLoop failed while waiting for SUBACK: %s",
                MQTT_Status_strerror(mqtt_status));
-      return mqtt_status;
+      return;
     }
 
     vTaskDelay(pdMS_TO_TICKS(100));
@@ -384,22 +402,35 @@ static MQTTStatus_t aws_iot_subscribe_to_topic()
   if (!(bits & MQTT_SUBACK_RECEIVED_BIT))
   {
     ESP_LOGE(TAG_AWS_IOT, "Timeout waiting for SUBACK");
-    return MQTTRecvFailed;
+    return;
   }
 
   if (!(bits & MQTT_SUBACK_SUCCESS_BIT))
   {
     ESP_LOGE(TAG_AWS_IOT, "Subscription rejected by broker");
-    return MQTTServerRefused;
+    return;
   }
 
-  ESP_LOGI(TAG_AWS_IOT, "Subscribed to topic %s successfully.", MQTT_TOPIC);
-  return mqtt_status;
+  // Allocate and copy the topic string
+  mqtt_topic = malloc(strlen(topic) + 1);
+  if (mqtt_topic == NULL)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Failed to allocate memory for topic");
+    return;
+  }
+  strcpy(mqtt_topic, topic);
+  ESP_LOGI(TAG_AWS_IOT, "Subscribed to topic %s successfully.", mqtt_topic);
 }
 
 /** @brief Handle the AWS IoT connect command */
 static void aws_iot_connect_cmd(const char* broker_url)
 {
+  // Free previous broker URL if it exists
+  if (mqtt_broker_url != NULL)
+  {
+    free(mqtt_broker_url);
+    mqtt_broker_url = NULL;
+  }
   aws_iot_statistics.connection_attempts++;
 
   // Validate broker URL
@@ -409,8 +440,6 @@ static void aws_iot_connect_cmd(const char* broker_url)
     return;
   }
 
-  network_context.pcHostname = broker_url;
-
   MQTTStatus_t mqtt_status = aws_iot_establish_mqtt_connection(broker_url);
   if (mqtt_status != MQTTSuccess)
   {
@@ -419,20 +448,17 @@ static void aws_iot_connect_cmd(const char* broker_url)
     return;
   }
 
-  mqtt_status = aws_iot_subscribe_to_topic();
-  if (mqtt_status != MQTTSuccess)
+  // Allocate and copy the broker URL string
+  mqtt_broker_url = malloc(strlen(broker_url) + 1);
+  if (mqtt_broker_url == NULL)
   {
-    ESP_LOGE(TAG_AWS_IOT, "Failed to subscribe to AWS IoT topic %s: %s", MQTT_TOPIC, MQTT_Status_strerror(mqtt_status));
-
-    MQTT_Disconnect(&mqtt_context);
-    xTlsDisconnect(&network_context);
-
-    state_machine_post_event(APP_AWS_IOT_EVT_DISCONNECTED, APP_AWS_IOT);
+    ESP_LOGE(TAG_AWS_IOT, "Failed to allocate memory for broker URL");
     return;
   }
-
+  strcpy(mqtt_broker_url, broker_url);
+  
   state_machine_post_event(APP_AWS_IOT_EVT_CONNECTED, APP_AWS_IOT);
-  ESP_LOGI(TAG_AWS_IOT, "Connected to AWS IoT %s successfully.", broker_url);
+  ESP_LOGI(TAG_AWS_IOT, "Connected to AWS IoT %s successfully.", mqtt_broker_url);
 
   aws_iot_statistics.successful_connections++;
 }
@@ -495,12 +521,20 @@ static void aws_iot_publish_button_event_cmd(const char* state)
 
   MQTTPublishInfo_t publish_info = {0};
 
+  const char *topic = aws_iot_get_mqtt_topic();
+  if (topic == NULL)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Failed to retrieve MQTT topic for publishing.");
+    free((void *)payload);
+    return;
+  }
+
   // Get a unique packet identifier for the PUBLISH packet
   uint16_t packet_id = MQTT_GetPacketId(&mqtt_context);
 
   publish_info.qos = MQTTQoS1;
-  publish_info.pTopicName = MQTT_TOPIC;
-  publish_info.topicNameLength = MQTT_TOPIC_LENGTH;
+  publish_info.pTopicName = topic;
+  publish_info.topicNameLength = strlen(topic);
   publish_info.pPayload = (const void *)payload;
   publish_info.payloadLength = strlen(payload);
   
@@ -513,7 +547,7 @@ static void aws_iot_publish_button_event_cmd(const char* state)
 
   // TODO - Wait for PUBACK
 
-  ESP_LOGI(TAG_AWS_IOT, "Published button event to topic %s: %s", MQTT_TOPIC, payload);
+  ESP_LOGI(TAG_AWS_IOT, "Published button event to topic %s: %s", topic, payload);
 
   aws_iot_statistics.messages_published++;
 
@@ -593,9 +627,16 @@ static void aws_iot_handle_suback_packet(MQTTPacketInfo_t * p_packet_info)
   // Publish SUBACK status
   ESP_LOGI(TAG_AWS_IOT, "SUBACK Status Code: %u", payload[0]);
 
+  const char *topic = subscription_list[0].pTopicFilter;
+  if (topic == NULL)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Failed to retrieve subscribed topic for SUBACK handling.");
+    return;
+  }
+
   if (payload[0] != MQTTSubAckFailure)
   {
-    ESP_LOGI(TAG_AWS_IOT, "Subscription to topic %s successful.", MQTT_TOPIC);
+    ESP_LOGI(TAG_AWS_IOT, "Subscription to topic %s successful.", topic);
     xEventGroupSetBits(mqtt_event_group, MQTT_SUBACK_RECEIVED_BIT | MQTT_SUBACK_SUCCESS_BIT);
   }
   else
@@ -858,11 +899,24 @@ static esp_err_t aws_iot_on_stop(GenericTask *self)
     ESP_LOGI(TAG_AWS_IOT, "MQTT event group deleted.");
   }
 
-  // Step 6: Reset network context and shutdown flag
+  // Step 6: Free allocated strings
+  if (mqtt_broker_url != NULL)
+  {
+    free(mqtt_broker_url);
+    mqtt_broker_url = NULL;
+  }
+
+  if (mqtt_topic != NULL)
+  {
+    free(mqtt_topic);
+    mqtt_topic = NULL;
+  }
+
+  // Step 7: Reset network context and shutdown flag
   network_context.pxTls = NULL;
   keep_alive_should_stop = false;
 
-  // Step 7: Clear statistics
+  // Step 8: Clear statistics
   (void)memset(&aws_iot_statistics, 0, sizeof(aws_iot_statistics));
 
   ESP_LOGI(TAG_AWS_IOT, "AWS IoT Task stopped.");
@@ -888,6 +942,9 @@ static void aws_iot_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
   {
     case APP_AWS_IOT_CMD_CONNECT:
       aws_iot_connect_cmd(msg->data.broker_url);
+      break;
+    case APP_AWS_IOT_CMD_SUBSCRIBE:
+      aws_iot_subscribe_to_topic_cmd(msg->data.topic);
       break;
     case APP_AWS_IOT_CMD_START_LISTENING:
       aws_iot_start_listening_cmd();

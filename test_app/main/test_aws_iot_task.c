@@ -70,6 +70,30 @@ TEST(aws_iot_task, connect_to_broker)
   TEST_ASSERT_EQUAL_STRING("", aws_iot_get_mqtt_topic());
 }
 
+/** @brief Test: Subscribe to a topic on AWS IoT
+ *  @test Expected: Successful subscription
+ */
+TEST(aws_iot_task, subscribe_to_topic)
+{
+  ESP_LOGI(TAG, "Starting test: subscribe_to_topic");
+
+  aws_iot_connect(MQTT_BROKER_ENDPOINT);
+  TEST_ASSERT_EQUAL(ESP_OK, aws_iot_wait_for_connection(CONNECT_TIMEOUT_MS));
+  ESP_LOGI(TAG, "AWS IoT connected");
+
+  aws_iot_subscribe_to_topic(MQTT_TOPIC);
+  vTaskDelay(pdMS_TO_TICKS(2 * DELAY_TIME_MS)); // Allow time for subscription to process
+
+  TEST_ASSERT_TRUE(aws_iot_is_connected());
+  TEST_ASSERT_FALSE(aws_iot_is_listening());
+
+  ESP_LOGI(TAG, "Get MQTT broker URL: %s", aws_iot_get_mqtt_broker_url());
+  ESP_LOGI(TAG, "Get MQTT topic: %s", aws_iot_get_mqtt_topic());
+
+  TEST_ASSERT_EQUAL_STRING(MQTT_BROKER_ENDPOINT, aws_iot_get_mqtt_broker_url());
+  TEST_ASSERT_EQUAL_STRING(MQTT_TOPIC, aws_iot_get_mqtt_topic());
+}
+
 /** @brief Test: Start listening for messages from AWS IoT broker
  *  @test Expected: Successful listening state
  */
@@ -81,12 +105,18 @@ TEST(aws_iot_task, start_listening_for_messages)
   TEST_ASSERT_EQUAL(ESP_OK, aws_iot_wait_for_connection(CONNECT_TIMEOUT_MS));
   ESP_LOGI(TAG, "AWS IoT connected");
 
+  aws_iot_subscribe_to_topic(MQTT_TOPIC);
+  vTaskDelay(pdMS_TO_TICKS(2 * DELAY_TIME_MS)); // Allow time for subscription to process
+
   aws_iot_start_listening();
   TEST_ASSERT_EQUAL(ESP_OK, aws_iot_wait_for_listening(CONNECT_TIMEOUT_MS));
   ESP_LOGI(TAG, "AWS IoT listening started");
 
   TEST_ASSERT_TRUE(aws_iot_is_connected());
   TEST_ASSERT_TRUE(aws_iot_is_listening());
+
+  TEST_ASSERT_EQUAL_STRING(MQTT_BROKER_ENDPOINT, aws_iot_get_mqtt_broker_url());
+  TEST_ASSERT_EQUAL_STRING(MQTT_TOPIC, aws_iot_get_mqtt_topic());
 
   AwsIotStatistics_t stats = aws_iot_get_statistics();
   ESP_LOGI(TAG, "AWS IoT statistics: connections attempts=%u, successful connections=%u, published=%u, received=%u",
@@ -111,12 +141,18 @@ TEST(aws_iot_task, publish_button_events)
   TEST_ASSERT_EQUAL(ESP_OK, aws_iot_wait_for_connection(CONNECT_TIMEOUT_MS));
   ESP_LOGI(TAG, "AWS IoT connected");
 
+  aws_iot_subscribe_to_topic(MQTT_TOPIC);
+  vTaskDelay(pdMS_TO_TICKS(2 * DELAY_TIME_MS)); // Allow time for subscription to process
+
   aws_iot_start_listening();
   TEST_ASSERT_EQUAL(ESP_OK, aws_iot_wait_for_listening(CONNECT_TIMEOUT_MS));
   ESP_LOGI(TAG, "AWS IoT listening started");
   
   TEST_ASSERT_TRUE(aws_iot_is_connected());
   TEST_ASSERT_TRUE(aws_iot_is_listening());
+
+  TEST_ASSERT_EQUAL_STRING(MQTT_BROKER_ENDPOINT, aws_iot_get_mqtt_broker_url());
+  TEST_ASSERT_EQUAL_STRING(MQTT_TOPIC, aws_iot_get_mqtt_topic());
 
   AwsIotStatistics_t stats = aws_iot_get_statistics();
   ESP_LOGI(TAG, "AWS IoT statistics before publishing: connections attempts=%u, successful connections=%u, published=%u, received=%u",
@@ -165,6 +201,7 @@ TEST_GROUP_RUNNER(aws_iot_task)
 {
   RUN_TEST_CASE(aws_iot_task, initial_state);
   RUN_TEST_CASE(aws_iot_task, connect_to_broker);
+  RUN_TEST_CASE(aws_iot_task, subscribe_to_topic);
   RUN_TEST_CASE(aws_iot_task, start_listening_for_messages);
   RUN_TEST_CASE(aws_iot_task, publish_button_events);
 }

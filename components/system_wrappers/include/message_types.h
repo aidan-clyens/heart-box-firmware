@@ -44,6 +44,7 @@ typedef enum
 
   // -- AWS IoT Commands -- //
   APP_AWS_IOT_CMD_CONNECT,
+  APP_AWS_IOT_CMD_SUBSCRIBE,
   APP_AWS_IOT_CMD_START_LISTENING,
   APP_AWS_IOT_CMD_PUBLISH_BUTTON_PRESSED,
   APP_AWS_IOT_CMD_PUBLISH_BUTTON_RELEASED,
@@ -122,6 +123,7 @@ typedef struct
   union
   {
     char broker_url[MAX_URL_LEN]; /**< For APP_AWS_IOT_CMD_CONNECT */
+    char topic[MAX_HOSTNAME_LEN]; /**< For APP_AWS_IOT_CMD_SUBSCRIBE */
   } data;
 } AwsIotMsg_t;
 

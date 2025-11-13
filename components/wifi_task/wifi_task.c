@@ -111,6 +111,27 @@ wifi_mode_t wifi_get_mode(void)
   return mode;
 }
 
+/** @brief Public API: Wait for WiFi connection with timeout
+ *  @param timeout_ms Maximum time to wait in milliseconds
+ *  @return ESP_OK if connected, ESP_ERR_TIMEOUT if timeout occurred
+ */
+esp_err_t wifi_wait_for_connection(unsigned int timeout_ms)
+{
+  const TickType_t start_time = xTaskGetTickCount();
+  const TickType_t timeout_ticks = pdMS_TO_TICKS(timeout_ms);
+
+  while ((xTaskGetTickCount() - start_time) < timeout_ticks)
+  {
+    if (wifi_task_is_connected())
+    {
+      return ESP_OK;
+    }
+    vTaskDelay(pdMS_TO_TICKS(100));
+  }
+
+  return ESP_ERR_TIMEOUT;
+}
+
 /** @brief Event handler for WiFi and IP events
  *  @param arg User-defined argument
  *  @param event_base Event base

@@ -51,7 +51,7 @@ TEST(wifi_task, start_ap_mode)
 
   wifi_set_ap_mode();
 
-  vTaskDelay(pdMS_TO_TICKS(CONNECT_TIMEOUT_MS)); // Allow some time for command to process and start
+  vTaskDelay(pdMS_TO_TICKS(DELAY_TIME_MS)); // Allow some time for command to process and start
 
   TEST_ASSERT_TRUE(wifi_task_is_started());
   TEST_ASSERT_FALSE(wifi_task_is_connected());
@@ -70,7 +70,7 @@ TEST(wifi_task, start_sta_mode_invalid_credentials)
 
   wifi_set_sta_credentials("TestSSID", "TestPassword");
 
-  vTaskDelay(pdMS_TO_TICKS(CONNECT_TIMEOUT_MS)); // Allow some time for command to process and start
+  TEST_ASSERT_EQUAL(ESP_ERR_TIMEOUT, wifi_wait_for_connection(CONNECT_TIMEOUT_MS));
 
   TEST_ASSERT_TRUE(wifi_task_is_started());
   TEST_ASSERT_FALSE(wifi_task_is_connected());
@@ -94,7 +94,7 @@ TEST(wifi_task, start_sta_mode_valid_credentials)
 
   wifi_set_sta_credentials(TEST_WIFI_SSID, TEST_WIFI_PASSWORD);
 
-  wait_for_connection(CONNECT_TIMEOUT_MS, true);
+  TEST_ASSERT_EQUAL(ESP_OK, wifi_wait_for_connection(CONNECT_TIMEOUT_MS));
 
   TEST_ASSERT_TRUE(wifi_task_is_started());
   TEST_ASSERT_TRUE(wifi_task_is_connected());
@@ -122,7 +122,7 @@ TEST(wifi_task, change_to_ap_mode)
 
   wifi_set_sta_credentials(TEST_WIFI_SSID, TEST_WIFI_PASSWORD);
 
-  wait_for_connection(CONNECT_TIMEOUT_MS, true);
+  TEST_ASSERT_EQUAL(ESP_OK, wifi_wait_for_connection(CONNECT_TIMEOUT_MS));
 
   TEST_ASSERT_TRUE(wifi_task_is_started());
   TEST_ASSERT_TRUE(wifi_task_is_connected());

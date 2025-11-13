@@ -54,6 +54,12 @@ bool wifi_task_is_connected(void);
  */
 wifi_mode_t wifi_get_mode(void);
 
+/** @brief Public API: Wait for WiFi connection with timeout
+ *  @param timeout_ms Maximum time to wait in milliseconds
+ *  @return ESP_OK if connected, ESP_ERR_TIMEOUT if timeout occurred
+ */
+esp_err_t wifi_wait_for_connection(unsigned int timeout_ms);
+
 #ifdef __cplusplus
 }
 #endif

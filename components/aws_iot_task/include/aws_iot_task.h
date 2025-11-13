@@ -64,6 +64,16 @@ esp_err_t aws_iot_wait_for_connection(unsigned int timeout_ms);
  */
 esp_err_t aws_iot_wait_for_listening(unsigned int timeout_ms);
 
+/** @brief Public API: Get the current MQTT broker URL
+ *  @return Current MQTT broker URL string
+ */
+const char *aws_iot_get_mqtt_broker_url(void);
+
+/** @brief Public API: Get the current MQTT topic
+ *  @return Current MQTT topic string
+ */
+const char *aws_iot_get_mqtt_topic(void);
+
 /** @brief Public API: Retrieve AWS IoT task statistics
  *  @return Structure containing AWS IoT task statistics
  */

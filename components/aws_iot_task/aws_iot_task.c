@@ -199,6 +199,33 @@ esp_err_t aws_iot_wait_for_listening(unsigned int timeout_ms)
   return ESP_ERR_TIMEOUT;
 }
 
+/** @brief Public API: Get the current MQTT broker URL
+ *  @return Current MQTT broker URL string
+ */
+const char *aws_iot_get_mqtt_broker_url(void)
+{
+  if (network_context.pcHostname == NULL)
+  {
+    return "";
+  }
+
+  return network_context.pcHostname;
+}
+
+/** @brief Public API: Get the current MQTT topic
+ *  @return Current MQTT topic string
+ */
+const char *aws_iot_get_mqtt_topic(void)
+{
+  if (subscription_list[0].pTopicFilter == NULL)
+  {
+    return "";
+  }
+
+  return subscription_list[0].pTopicFilter;
+}
+
+
 /** @brief Public API: Retrieve AWS IoT task statistics
  *  @return Structure containing AWS IoT task statistics
  */

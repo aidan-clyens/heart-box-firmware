@@ -47,6 +47,9 @@ TEST(aws_iot_task, initial_state)
 
   TEST_ASSERT_FALSE(aws_iot_is_connected());
   TEST_ASSERT_FALSE(aws_iot_is_listening());
+
+  TEST_ASSERT_EQUAL_STRING("", aws_iot_get_mqtt_broker_url());
+  TEST_ASSERT_EQUAL_STRING("", aws_iot_get_mqtt_topic());
 }
 
 /** @brief Test: Connect to AWS IoT broker
@@ -62,6 +65,9 @@ TEST(aws_iot_task, connect_to_broker)
 
   TEST_ASSERT_TRUE(aws_iot_is_connected());
   TEST_ASSERT_FALSE(aws_iot_is_listening());
+
+  TEST_ASSERT_EQUAL_STRING(MQTT_BROKER_ENDPOINT, aws_iot_get_mqtt_broker_url());
+  TEST_ASSERT_EQUAL_STRING("", aws_iot_get_mqtt_topic());
 }
 
 /** @brief Test: Start listening for messages from AWS IoT broker

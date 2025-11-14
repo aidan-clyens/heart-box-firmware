@@ -206,7 +206,7 @@ static void state_machine_enter_state(eAppState_t new_state)
     file_system_write_string(NVS_SSID_KEY, (char *)credentials.ssid);
     file_system_write_string(NVS_PASSWORD_KEY, (char *)credentials.password);
 
-    wifi_ping("www.google.com");
+    wifi_ping("8.8.8.8");
     break;
 
   case STATE_AWS_IOT_CONNECTED:

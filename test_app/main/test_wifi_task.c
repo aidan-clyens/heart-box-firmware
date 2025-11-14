@@ -108,8 +108,34 @@ TEST(wifi_task, start_sta_mode_valid_credentials)
   TEST_ASSERT_EQUAL_STRING(TEST_WIFI_PASSWORD, creds.password);
 }
 
+/** @brief Test: Send a ping command to an external host
+ *  @test Expected: Ping command is sent successfully
+ */
 TEST(wifi_task, ping)
 {
+  TEST_ASSERT_FALSE(wifi_task_is_started());
+  TEST_ASSERT_FALSE(wifi_task_is_connected());
+
+  wifi_set_sta_credentials(TEST_WIFI_SSID, TEST_WIFI_PASSWORD);
+
+  TEST_ASSERT_EQUAL(ESP_OK, wifi_wait_for_connection(CONNECT_TIMEOUT_MS));
+
+  TEST_ASSERT_TRUE(wifi_task_is_started());
+  TEST_ASSERT_TRUE(wifi_task_is_connected());
+
+  wifi_mode_t mode = wifi_get_mode();
+  TEST_ASSERT_EQUAL(WIFI_MODE_STA, mode);
+
+  // Get the current credentials and verify
+  WifiCredentials_t creds = wifi_get_current_credentials();
+  TEST_ASSERT_EQUAL_STRING(TEST_WIFI_SSID, creds.ssid);
+  TEST_ASSERT_EQUAL_STRING(TEST_WIFI_PASSWORD, creds.password);
+
+  // Send a ping to a known host
+  wifi_ping("8.8.8.8");
+
+  // Allow some time for ping to complete
+  vTaskDelay(pdMS_TO_TICKS(5000));
 }
 
 /** @brief Test: Change WiFi from STA mode to AP mode
@@ -153,6 +179,6 @@ TEST_GROUP_RUNNER(wifi_task)
   RUN_TEST_CASE(wifi_task, start_ap_mode);
   RUN_TEST_CASE(wifi_task, start_sta_mode_invalid_credentials);
   RUN_TEST_CASE(wifi_task, start_sta_mode_valid_credentials);
-  // RUN_TEST_CASE(wifi_task, ping);
+  RUN_TEST_CASE(wifi_task, ping);
   RUN_TEST_CASE(wifi_task, change_to_ap_mode);
 }

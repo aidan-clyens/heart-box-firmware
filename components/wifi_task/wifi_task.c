@@ -197,6 +197,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
  */
 static void wifi_on_ping_success(esp_ping_handle_t hdl, void *args)
 {
+  ESP_LOGI(TAG_WIFI, "Ping successful");
   state_machine_post_event(APP_EVT_PING_SUCCESS, APP_WIFI);
 }
 
@@ -206,6 +207,7 @@ static void wifi_on_ping_success(esp_ping_handle_t hdl, void *args)
  */
 static void wifi_on_ping_timeout(esp_ping_handle_t hdl, void *args)
 {
+  ESP_LOGI(TAG_WIFI, "Ping timeout");
   state_machine_post_event(APP_EVT_PING_TIMEOUT, APP_WIFI);
 }
 
@@ -215,6 +217,7 @@ static void wifi_on_ping_timeout(esp_ping_handle_t hdl, void *args)
  */
 static void wifi_on_ping_end(esp_ping_handle_t hdl, void *args)
 {
+  ESP_LOGI(TAG_WIFI, "Ping ended");
   esp_ping_delete_session(hdl);
 }
 
@@ -248,20 +251,29 @@ static void wifi_ping_start(const char *hostname)
   ip_addr_t target_addr;
   struct addrinfo hint, *res = NULL;
   memset(&hint, 0, sizeof(hint));
+  memset(&target_addr, 0, sizeof(target_addr));
+  
   int err = getaddrinfo(hostname, NULL, &hint, &res);
   if (err != 0 || res == NULL)
   {
-    ESP_LOGE(TAG_WIFI, "DNS lookup failed for %s", hostname);
+    ESP_LOGE(TAG_WIFI, "DNS lookup failed for %s: err=%d", hostname, err);
+    state_machine_post_event(APP_EVT_PING_TIMEOUT, APP_WIFI);
     return;
   }
 
   struct sockaddr_in *addr4 = (struct sockaddr_in *)res->ai_addr;
   inet_addr_to_ip4addr(ip_2_ip4(&target_addr), &addr4->sin_addr);
+  IP_SET_TYPE(&target_addr, IPADDR_TYPE_V4);
   freeaddrinfo(res);
+
+  ESP_LOGI(TAG_WIFI, "Pinging %s (%s) ...", hostname, ipaddr_ntoa(&target_addr));
 
   esp_ping_config_t ping_config = ESP_PING_DEFAULT_CONFIG();
   ping_config.target_addr = target_addr;
   ping_config.count = 1;
+  ping_config.timeout_ms = 5000;
+  ping_config.interval_ms = 1000;
+  
   esp_ping_callbacks_t cbs = {
       .on_ping_success = wifi_on_ping_success,
       .on_ping_timeout = wifi_on_ping_timeout,
@@ -269,10 +281,22 @@ static void wifi_ping_start(const char *hostname)
   };
 
   esp_ping_handle_t ping;
-  esp_ping_new_session(&ping_config, &cbs, &ping);
-  esp_ping_start(ping);
+  esp_err_t ret = esp_ping_new_session(&ping_config, &cbs, &ping);
+  if (ret != ESP_OK)
+  {
+    ESP_LOGE(TAG_WIFI, "Failed to create ping session: %s", esp_err_to_name(ret));
+    state_machine_post_event(APP_EVT_PING_TIMEOUT, APP_WIFI);
+    return;
+  }
 
-  ESP_LOGI(TAG_WIFI, "Pinging %s ...", hostname);
+  ret = esp_ping_start(ping);
+  if (ret != ESP_OK)
+  {
+    ESP_LOGE(TAG_WIFI, "Failed to start ping: %s", esp_err_to_name(ret));
+    esp_ping_delete_session(ping);
+    state_machine_post_event(APP_EVT_PING_TIMEOUT, APP_WIFI);
+    return;
+  }
 }
 
 /** @brief Initialize WiFi

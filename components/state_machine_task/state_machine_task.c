@@ -206,14 +206,11 @@ static void state_machine_enter_state(eAppState_t new_state)
     file_system_write_string(NVS_SSID_KEY, (char *)credentials.ssid);
     file_system_write_string(NVS_PASSWORD_KEY, (char *)credentials.password);
 
-    wifi_ping("airgahux2exxu-ats.iot.us-east-1.amazonaws.com");
+    wifi_ping("www.google.com");
     break;
 
   case STATE_AWS_IOT_CONNECTED:
-    gpio_set_state(GPIO_STATE_LED_SOLID);
-    // Start AWS IoT Keep Alive task to listen for incoming messages
-    aws_iot_start_listening();
-
+    aws_iot_subscribe_to_topic(MQTT_TOPIC);
     break;
   }
 }
@@ -350,6 +347,15 @@ static void state_machine_on_message(GenericTask *self, void *msg_buf, size_t ms
       ESP_LOGI(TAG, "Transition: %s -> %s", state_machine_state_to_string(current_state), state_machine_state_to_string(STATE_IDLE));
       current_state = STATE_IDLE;
       state_machine_enter_state(current_state);
+    }
+    else if (event == APP_AWS_IOT_EVT_SUBSCRIBED)
+    {
+      ESP_LOGI(TAG, "Successfully subscribed to AWS IoT topic %s in STATE_AWS_IOT_CONNECTED", MQTT_TOPIC);
+
+      gpio_set_state(GPIO_STATE_LED_SOLID);
+
+      // Start AWS IoT Keep Alive task to listen for incoming messages
+      aws_iot_start_listening();
     }
     else if (event == APP_GPIO_EVT_BUTTON_PRESSED)
     {

@@ -411,6 +411,8 @@ static void aws_iot_subscribe_to_topic_cmd(const char* topic)
   }
   strcpy(mqtt_topic, topic);
   ESP_LOGI(TAG_AWS_IOT, "Subscribed to topic %s successfully.", mqtt_topic);
+
+  state_machine_post_event(APP_AWS_IOT_EVT_SUBSCRIBED, APP_AWS_IOT);
 }
 
 /** @brief Handle the AWS IoT connect command */

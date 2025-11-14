@@ -258,10 +258,6 @@ static void aws_iot_keep_alive_task()
       ESP_LOGE(TAG_AWS_IOT, "MQTT_ProcessLoop failed in Keep Alive task: %s",
                MQTT_Status_strerror(mqtt_status));
 
-      // Handle disconnection
-      MQTT_Disconnect(&mqtt_context);
-      xTlsDisconnect(&network_context);
-
       state_machine_post_event(APP_AWS_IOT_EVT_DISCONNECTED, APP_AWS_IOT);
 
       ESP_LOGI(TAG_AWS_IOT_KEEP_ALIVE, "AWS IoT Keep Alive Task exiting due to error.");

@@ -377,7 +377,12 @@ static esp_err_t wifi_on_stop(GenericTask *self)
     ESP_LOGE(TAG_WIFI, "esp_wifi_deinit failed: %s", esp_err_to_name(ret));
   }
 
-  // Step 5: Destroy network interfaces
+  // Step 5: Clear default WiFi handlers before destroying netifs
+  // This prevents "duplicate key" errors when recreating netifs
+  esp_wifi_clear_default_wifi_driver_and_handlers(sta_netif);
+  esp_wifi_clear_default_wifi_driver_and_handlers(ap_netif);
+
+  // Step 6: Destroy network interfaces
   if (sta_netif != NULL)
   {
     esp_netif_destroy(sta_netif);

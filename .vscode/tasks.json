@@ -2,11 +2,31 @@
     "tasks": [
         {
             "type": "shell",
+            "label": "ESP32 - Build App",
+            "command": "idf.py build",
+            "group": "build",
+            "problemMatcher": [],
+            "detail": "Build the ESP32 Application"
+        },
+        {
+            "type": "shell",
+            "label": "ESP32 - Build, Flash, and Monitor App",
+            "command": "idf.py build; idf.py -p COM4 flash monitor",
+            "group": "build",
+            "problemMatcher": [],
+            "detail": "Build, Flash, and Monitor the ESP32 Application"
+        },
+        {
+            "type": "shell",
             "label": "ESP32 - Build Test App",
             "command": "cd test_app; idf.py build",
             "group": "build",
             "problemMatcher": [],
-            "detail": "Build the ESP32 Test Application"
+            "detail": "Build the ESP32 Test Application",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "ESP32 - Build App"
+            ]
         },
         {
             "type": "shell",
@@ -14,7 +34,11 @@
             "command": "cd test_app; idf.py build; idf.py -p COM4 flash monitor",
             "group": "none",
             "problemMatcher": [],
-            "detail": "Build, Flash, and Monitor the ESP32 Test Application"
+            "detail": "Build, Flash, and Monitor the ESP32 Test Application",
+            "dependsOrder": "sequence",
+            "dependsOn": [
+                "ESP32 - Build App"
+            ]
         }
     ]
 }

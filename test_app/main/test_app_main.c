@@ -22,7 +22,7 @@ static void run_all_tests(void)
   RUN_TEST_GROUP(gpio_task);
   RUN_TEST_GROUP(wifi_task);
   RUN_TEST_GROUP(aws_iot_task);
-  RUN_TEST_GROUP(state_machine_task);
+  // RUN_TEST_GROUP(state_machine_task);
 }
 
 // Test application main

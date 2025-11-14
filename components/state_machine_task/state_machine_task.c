@@ -11,7 +11,12 @@
 
 #ifndef MQTT_BROKER_ENDPOINT
 #error "MQTT_BROKER_ENDPOINT must be defined in sdkconfig"
-#endif
+#endif // MQTT_BROKER_ENDPOINT
+
+#ifndef MQTT_TOPIC
+#error "MQTT_TOPIC must be defined in sdkconfig"
+#endif // MQTT_TOPIC
+#define MQTT_TOPIC_LENGTH ((uint16_t)(sizeof(MQTT_TOPIC) - 1))
 
 // #define DEBUG_MODE
 

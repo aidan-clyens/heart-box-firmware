@@ -6,4 +6,5 @@ idf_component_register(
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
   MQTT_BROKER_ENDPOINT="${AWS_IOT_ENDPOINT}"
+  MQTT_TOPIC="${AWS_IOT_TOPIC}"
 )

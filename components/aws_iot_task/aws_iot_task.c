@@ -30,11 +30,6 @@
 #endif // MQTT_CLIENT_IDENTIFIER
 #define MQTT_CLIENT_IDENTIFIER_LENGTH ((uint16_t)(sizeof(MQTT_CLIENT_IDENTIFIER) - 1))
 
-#ifndef MQTT_TOPIC
-#define MQTT_TOPIC "Default"
-#endif // MQTT_TOPIC
-#define MQTT_TOPIC_LENGTH ((uint16_t)(sizeof(MQTT_TOPIC) - 1))
-
 #define MQTT_PORT 8883
 
 // Time definitions

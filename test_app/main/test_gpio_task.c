@@ -32,9 +32,19 @@ TEST_TEAR_DOWN(gpio_task)
  */
 TEST(gpio_task, initialize_task)
 {
-  unsigned int led_level = gpio_get_status_led_level();
+  unsigned int led_level = gpio_get_led_level(LED_STATUS_PIN_1);
   ESP_LOGI(TAG, "gpio_task:initialize_task - LED Level: %u", led_level);
   TEST_ASSERT_EQUAL_UINT(GPIO_LOW, led_level);
+
+  led_level = gpio_get_led_level(LED_STATUS_PIN_2);
+  ESP_LOGI(TAG, "gpio_task:initialize_task - LED Level: %u", led_level);
+  TEST_ASSERT_EQUAL_UINT(GPIO_LOW, led_level);
+
+  led_level = gpio_get_led_level(HEART_LED_ARRAY_PIN);
+  ESP_LOGI(TAG, "gpio_task:initialize_task - LED Level: %u", led_level);
+  TEST_ASSERT_EQUAL_UINT(GPIO_LOW, led_level);
+
+  vTaskDelay(pdMS_TO_TICKS(5000));
 }
 
 /** @brief Test: LED Solid State
@@ -42,25 +52,19 @@ TEST(gpio_task, initialize_task)
  */
 TEST(gpio_task, led_solid)
 {
-  gpio_set_state(GPIO_STATE_LED_SOLID);
+  gpio_set_state(LED_STATUS_PIN_2, GPIO_STATE_LED_SOLID);
 
   vTaskDelay(pdMS_TO_TICKS(2000));
 
-  unsigned int led_level = gpio_get_status_led_level();
+  unsigned int led_level = gpio_get_led_level(LED_STATUS_PIN_2);
   ESP_LOGI(TAG, "gpio_task:led_solid - LED Level: %u", led_level);
   TEST_ASSERT_EQUAL_UINT(GPIO_HIGH, led_level);
-}
 
-/** @brief Test: LED Off State
- *  @test Expected: GPIO task initializes successfully
- */
-TEST(gpio_task, led_off)
-{
-  gpio_set_state(GPIO_STATE_LED_OFF);
+  gpio_set_state(LED_STATUS_PIN_2, GPIO_STATE_LED_OFF);
 
-  vTaskDelay(pdMS_TO_TICKS(1000));
+  vTaskDelay(pdMS_TO_TICKS(2000));
 
-  unsigned int led_level = gpio_get_status_led_level();
+  led_level = gpio_get_led_level(LED_STATUS_PIN_2);
   ESP_LOGI(TAG, "gpio_task:led_off - LED Level: %u", led_level);
   TEST_ASSERT_EQUAL_UINT(GPIO_LOW, led_level);
 }
@@ -70,27 +74,27 @@ TEST(gpio_task, led_off)
  */
 TEST(gpio_task, led_blink)
 {
-  gpio_set_state(GPIO_STATE_LED_BLINK);
+  gpio_set_state(LED_STATUS_PIN_2, GPIO_STATE_LED_BLINK);
 
-  unsigned int led_level = gpio_get_status_led_level();
+  unsigned int led_level = gpio_get_led_level(LED_STATUS_PIN_2);
   ESP_LOGI(TAG, "gpio_task:led_blink - LED Level: %u", led_level);
   TEST_ASSERT_EQUAL_UINT(GPIO_LOW, led_level);
 
   vTaskDelay(pdMS_TO_TICKS(2.5 * GPIO_LED_BLINK_INTERVAL_MS));
 
-  led_level = gpio_get_status_led_level();
+  led_level = gpio_get_led_level(LED_STATUS_PIN_2);
   ESP_LOGI(TAG, "gpio_task:led_blink - LED Level after blink interval: %u", led_level);
   TEST_ASSERT_EQUAL_UINT(GPIO_HIGH, led_level);
 
   vTaskDelay(pdMS_TO_TICKS(GPIO_LED_BLINK_INTERVAL_MS));
 
-  led_level = gpio_get_status_led_level();
+  led_level = gpio_get_led_level(LED_STATUS_PIN_2);
   ESP_LOGI(TAG, "gpio_task:led_blink - LED Level after blink interval: %u", led_level);
   TEST_ASSERT_EQUAL_UINT(GPIO_LOW, led_level);
 
   vTaskDelay(pdMS_TO_TICKS(GPIO_LED_BLINK_INTERVAL_MS));
 
-  led_level = gpio_get_status_led_level();
+  led_level = gpio_get_led_level(LED_STATUS_PIN_2);
   ESP_LOGI(TAG, "gpio_task:led_blink - LED Level after blink interval: %u", led_level);
   TEST_ASSERT_EQUAL_UINT(GPIO_HIGH, led_level);
 }
@@ -102,7 +106,7 @@ TEST(gpio_task, push_button_isr)
   // The output LED is set to the button state
   // In this case, the button is set to LOW
   vTaskDelay(pdMS_TO_TICKS(500));
-  TEST_ASSERT_EQUAL_UINT(GPIO_LOW, gpio_get_output_led_level());
+  TEST_ASSERT_EQUAL_UINT(GPIO_LOW, gpio_get_led_level(HEART_LED_ARRAY_PIN));
 
   // Simulate a button press to set it HIGH
   gpio_set_button_level(GPIO_HIGH);
@@ -110,14 +114,69 @@ TEST(gpio_task, push_button_isr)
 
   // In this case, the button is set to HIGH
   vTaskDelay(pdMS_TO_TICKS(500));
-  TEST_ASSERT_EQUAL_UINT(GPIO_HIGH, gpio_get_output_led_level());
+  TEST_ASSERT_EQUAL_UINT(GPIO_HIGH, gpio_get_led_level(HEART_LED_ARRAY_PIN));
+
+  vTaskDelay(pdMS_TO_TICKS(5000));
+}
+
+/** @brief Test: LED Array Solid State
+ *  @test Expected: GPIO task initializes successfully
+ */
+TEST(gpio_task, led_array_solid)
+{
+  gpio_set_state(HEART_LED_ARRAY_PIN, GPIO_STATE_LED_SOLID);
+
+  vTaskDelay(pdMS_TO_TICKS(2000));
+
+  unsigned int led_level = gpio_get_led_level(HEART_LED_ARRAY_PIN);
+  ESP_LOGI(TAG, "gpio_task:led_array_solid - LED Level: %u", led_level);
+  TEST_ASSERT_EQUAL_UINT(GPIO_HIGH, led_level);
+
+  gpio_set_state(HEART_LED_ARRAY_PIN, GPIO_STATE_LED_OFF);
+
+  vTaskDelay(pdMS_TO_TICKS(5000));
+
+  led_level = gpio_get_led_level(HEART_LED_ARRAY_PIN);
+  ESP_LOGI(TAG, "gpio_task:led_array_solid - LED Level: %u", led_level);
+  TEST_ASSERT_EQUAL_UINT(GPIO_LOW, led_level);
+
+  vTaskDelay(pdMS_TO_TICKS(5000));
+}
+
+TEST(gpio_task, led_array_blink)
+{
+  gpio_set_state(HEART_LED_ARRAY_PIN, GPIO_STATE_LED_BLINK);
+
+  unsigned int led_level = gpio_get_led_level(HEART_LED_ARRAY_PIN);
+  ESP_LOGI(TAG, "gpio_task:led_array_blink - LED Level: %u", led_level);
+  TEST_ASSERT_EQUAL_UINT(GPIO_LOW, led_level);
+
+  vTaskDelay(pdMS_TO_TICKS(2.5 * GPIO_LED_BLINK_INTERVAL_MS));
+
+  led_level = gpio_get_led_level(HEART_LED_ARRAY_PIN);
+  ESP_LOGI(TAG, "gpio_task:led_array_blink - LED Level after blink interval: %u", led_level);
+  TEST_ASSERT_EQUAL_UINT(GPIO_HIGH, led_level);
+
+  vTaskDelay(pdMS_TO_TICKS(GPIO_LED_BLINK_INTERVAL_MS));
+
+  led_level = gpio_get_led_level(HEART_LED_ARRAY_PIN);
+  ESP_LOGI(TAG, "gpio_task:led_array_blink - LED Level after blink interval: %u", led_level);
+  TEST_ASSERT_EQUAL_UINT(GPIO_LOW, led_level);
+
+  vTaskDelay(pdMS_TO_TICKS(GPIO_LED_BLINK_INTERVAL_MS));
+
+  led_level = gpio_get_led_level(HEART_LED_ARRAY_PIN);
+  ESP_LOGI(TAG, "gpio_task:led_array_blink - LED Level after blink interval: %u", led_level);
+  TEST_ASSERT_EQUAL_UINT(GPIO_HIGH, led_level);
 }
 
 TEST_GROUP_RUNNER(gpio_task)
 {
   RUN_TEST_CASE(gpio_task, initialize_task);
   RUN_TEST_CASE(gpio_task, led_solid);
-  RUN_TEST_CASE(gpio_task, led_off);
   RUN_TEST_CASE(gpio_task, led_blink);
   RUN_TEST_CASE(gpio_task, push_button_isr);
+  RUN_TEST_CASE(gpio_task, led_array_solid);
+  RUN_TEST_CASE(gpio_task, led_array_blink);
 }
+

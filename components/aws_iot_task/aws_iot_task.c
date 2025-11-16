@@ -34,12 +34,12 @@
 
 // Time definitions
 #define MQTT_KEEP_ALIVE_INTERVAL_S 60U
-#define MQTT_KEEP_ALIVE_TIMER_INTERVAL_MS 500U
+#define MQTT_KEEP_ALIVE_TIMER_INTERVAL_MS 50U
 #define MQTT_CONNACK_RECV_TIMEOUT_MS 5000U
 #define MQTT_PROCESS_LOOP_TIMEOUT_MS 5000U
 
-#define MQTT_OUTGOING_PUBLISH_RECORD_LEN 20U
-#define MQTT_INCOMING_PUBLISH_RECORD_LEN 20U
+#define MQTT_OUTGOING_PUBLISH_RECORD_LEN 30U
+#define MQTT_INCOMING_PUBLISH_RECORD_LEN 30U
 
 #define MQTT_NETWORK_BUFFER_SIZE 2048
 
@@ -418,6 +418,8 @@ static void aws_iot_subscribe_to_topic_cmd(const char* topic)
 /** @brief Handle the AWS IoT connect command */
 static void aws_iot_connect_cmd(const char* broker_url)
 {
+  ESP_LOGI(TAG_AWS_IOT, "Connecting to AWS IoT broker at %s...", broker_url);
+
   // Free previous broker URL if it exists
   if (mqtt_broker_url != NULL)
   {
@@ -430,6 +432,7 @@ static void aws_iot_connect_cmd(const char* broker_url)
   if (broker_url == NULL || strlen(broker_url) == 0)
   {
     ESP_LOGE(TAG_AWS_IOT, "Invalid broker URL");
+    state_machine_post_event(APP_AWS_IOT_EVT_DISCONNECTED, APP_AWS_IOT);
     return;
   }
 

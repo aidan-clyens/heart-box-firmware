@@ -7,6 +7,7 @@ extern "C"
 #endif
 
 #include "freertos/FreeRTOS.h"
+#include "driver/gpio.h"
 
 // --- Constants ---
 #define MAX_SSID_LEN        32
@@ -102,6 +103,15 @@ typedef struct
   } data;
 } WifiMsg_t;
 
+/** @struct GpioLedStateMsg_t
+ *  @brief Data for setting GPIO LED state
+ */
+typedef struct
+{
+  gpio_num_t pin;     /**< For APP_GPIO_CMD_SET_STATE */
+  eGpioState_t state; /**< For APP_GPIO_CMD_SET_STATE */
+} GpioLedStateMsg_t;
+
 /** @struct GpioMsg_t
  *  @brief Command or event message for the GPIO task
  */
@@ -110,7 +120,7 @@ typedef struct
   eAppMsgType_t type;
   union
   {
-    eGpioState_t state; /**< For APP_GPIO_CMD_SET_STATE */
+    GpioLedStateMsg_t led_state; /**< For APP_GPIO_CMD_SET_STATE */
     int button_level;   /**< For APP_GPIO_EVT_BUTTON_PRESSED */
   } data;
 } GpioMsg_t;

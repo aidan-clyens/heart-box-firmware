@@ -26,7 +26,7 @@ extern "C"
 #define GPIO_LED_BLINK_INTERVAL_MS 1000
 #define BUTTON_DEBOUNCE_TIME_MS 50
 
-#define DEBUG_GPIO_BUTTON_ISR
+// #define DEBUG_GPIO_BUTTON_ISR
 
 /** @brief Initialize and start the GPIO task
  *  @return ESP_OK on success, error code on failure
@@ -41,17 +41,12 @@ esp_err_t gpio_task_deinit(void);
 /** @brief Change the state of the GPIO status LED
  *  @param state The state to change to
  */
-void gpio_set_state(eGpioState_t state);
+void gpio_set_state(gpio_num_t pin, eGpioState_t state);
 
-/** @brief Get the current level of the status LED
- *  @return The current level of the status LED (0 = OFF, 1 = ON)
+/** @brief Get the current level of the selected LED pin
+ *  @return The current level of the selected LED (0 = OFF, 1 = ON)
  */
-unsigned int gpio_get_status_led_level(void);
-
-/** @brief Get the current level of the output LED
- *  @return The current level of the output LED (0 = LOW, 1 = HIGH)
- */
-unsigned int gpio_get_output_led_level(void);
+unsigned int gpio_get_led_level(gpio_num_t pin);
 
 #ifdef DEBUG_GPIO_BUTTON_ISR
 /** @brief Simulate a button press ISR for testing purposes */

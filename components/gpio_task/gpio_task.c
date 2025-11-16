@@ -9,6 +9,8 @@
 
 // #define DEBUG
 
+#define NUM_GPIO_PINS 40 // How many GPIO pins are available on the ESP32?
+
 static const char *TAG_GPIO = "GPIO_TASK";
 
 // Forward declarations
@@ -22,8 +24,7 @@ static TaskHandle_t gpio_button_task_handle = NULL;
 static SemaphoreHandle_t gpio_button_semaphore = NULL;
 static TimerHandle_t gpio_blink_timer = NULL;
 
-static int gpio_status_led_current_level = GPIO_LOW;
-static int gpio_output_led_current_level = GPIO_LOW;
+static int gpio_led_current_state[NUM_GPIO_PINS] = {0};
 
 #ifdef DEBUG_GPIO_BUTTON_ISR
 static int gpio_simulated_button_level = GPIO_LOW;
@@ -40,26 +41,25 @@ BaseType_t gpio_post_msg(GpioMsg_t msg)
 /** @brief Public API: Change the state of the GPIO status LED
  *  @param state The state to change to
  */
-void gpio_set_state(eGpioState_t state)
+void gpio_set_state(gpio_num_t pin, eGpioState_t state)
 {
-  GpioMsg_t msg = {.type = APP_GPIO_CMD_SET_STATE, .data.state = state};
+  GpioLedStateMsg_t led_state_msg = {.pin = pin, .state = state};
+  GpioMsg_t msg = {.type = APP_GPIO_CMD_SET_STATE, .data.led_state = led_state_msg};
   gpio_post_msg(msg);
 }
 
-/** @brief Public API: Get the current level of the status LED
+/** @brief Public API: Get the current level of the status LED pin
  *  @return The current level of the status LED (0 = OFF, 1 = ON)
  */
-unsigned int gpio_get_status_led_level(void)
+unsigned int gpio_get_led_level(gpio_num_t pin)
 {
-  return gpio_status_led_current_level;
-}
+  if (pin >= NUM_GPIO_PINS)
+  {
+    ESP_LOGE(TAG_GPIO, "Invalid GPIO pin number: %d", pin);
+    return GPIO_LOW;
+  }
 
-/** @brief Public API: Get the current level of the output LED
- *  @return The current level of the output LED (0 = LOW, 1 = HIGH)
- */
-unsigned int gpio_get_output_led_level(void)
-{
-  return gpio_output_led_current_level;
+  return gpio_led_current_state[pin];
 }
 
 #ifdef DEBUG_GPIO_BUTTON_ISR
@@ -72,11 +72,17 @@ void gpio_set_button_level(int level)
 /** @brief Set the status LED to ON or OFF
  *  @param level The level to set (0 = OFF, 1 = ON)
  */
-static void gpio_set_status_led_level(int level)
+static void gpio_set_led_level(gpio_num_t pin, int level)
 {
-  gpio_status_led_current_level = level;
-  ESP_LOGI(TAG_GPIO, "Setting Status LED level to %s", level == GPIO_HIGH ? "HIGH" : "LOW");
-  gpio_set_level(LED_STATUS_PIN_2, gpio_status_led_current_level);
+  if (pin >= NUM_GPIO_PINS)
+  {
+    ESP_LOGE(TAG_GPIO, "Invalid GPIO pin number: %d", pin);
+    return;
+  }
+
+  gpio_led_current_state[pin] = level;
+  ESP_LOGI(TAG_GPIO, "Setting LED pin %d level to %s", pin, level == GPIO_HIGH ? "HIGH" : "LOW");
+  gpio_set_level(pin, gpio_led_current_state[pin]);
 }
 
 static int gpio_get_button_level()
@@ -94,7 +100,7 @@ static int gpio_get_button_level()
 static void gpio_blink_timer_cb(TimerHandle_t xTimer)
 {
   static bool on = false;
-  gpio_set_status_led_level(on ? GPIO_HIGH : GPIO_LOW);
+  gpio_set_led_level(LED_STATUS_PIN_2, on ? GPIO_HIGH : GPIO_LOW);
   on = !on;
 }
 
@@ -144,9 +150,9 @@ static void gpio_button_task(void *args)
 
       vTaskDelay(pdMS_TO_TICKS(BUTTON_DEBOUNCE_TIME_MS));
 
-      gpio_output_led_current_level = gpio_get_button_level();
-      ESP_LOGI(TAG_GPIO, "Received Push Button Event - Button level: %d", gpio_output_led_current_level);
-      gpio_set_level(HEART_LED_ARRAY_PIN, gpio_output_led_current_level);
+      gpio_led_current_state[HEART_LED_ARRAY_PIN] = gpio_get_button_level();
+      ESP_LOGI(TAG_GPIO, "Received Push Button Event - Button level: %d", gpio_led_current_state[HEART_LED_ARRAY_PIN]);
+      gpio_set_level(HEART_LED_ARRAY_PIN, gpio_led_current_state[HEART_LED_ARRAY_PIN]);
 
       // Notify state machine
       state_machine_post_event(APP_GPIO_EVT_BUTTON_PRESSED, APP_GPIO);
@@ -161,6 +167,8 @@ static esp_err_t gpio_on_init(GenericTask *self)
 {
   esp_err_t ret;
 
+  memset(gpio_led_current_state, 0, sizeof(gpio_led_current_state));
+
   // Step 1: Initialize GPIO pins
   gpio_reset_pin(HEART_LED_ARRAY_PIN);
   gpio_set_direction(HEART_LED_ARRAY_PIN, GPIO_MODE_OUTPUT);
@@ -170,6 +178,10 @@ static esp_err_t gpio_on_init(GenericTask *self)
 
   gpio_reset_pin(LED_STATUS_PIN_2);
   gpio_set_direction(LED_STATUS_PIN_2, GPIO_MODE_OUTPUT);
+
+  gpio_set_led_level(HEART_LED_ARRAY_PIN, GPIO_LOW);
+  gpio_set_led_level(LED_STATUS_PIN_1, GPIO_LOW);
+  gpio_set_led_level(LED_STATUS_PIN_2, GPIO_LOW);
 
   gpio_config_t button_pin_config = {
       .pin_bit_mask = (1ULL << BUTTON_PIN),
@@ -276,9 +288,10 @@ static esp_err_t gpio_on_stop(GenericTask *self)
   }
 
   // Step 6: Reset GPIO pins to safe state
-  gpio_set_status_led_level(GPIO_LOW);
-  gpio_set_level(HEART_LED_ARRAY_PIN, GPIO_LOW);
-  
+  gpio_set_led_level(HEART_LED_ARRAY_PIN, GPIO_LOW);
+  gpio_set_led_level(LED_STATUS_PIN_1, GPIO_LOW);
+  gpio_set_led_level(LED_STATUS_PIN_2, GPIO_LOW);
+
   gpio_reset_pin(HEART_LED_ARRAY_PIN);
   gpio_reset_pin(LED_STATUS_PIN_1);
   gpio_reset_pin(LED_STATUS_PIN_2);
@@ -300,7 +313,7 @@ static void gpio_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
   switch (msg->type)
   {
   case APP_GPIO_CMD_SET_STATE:
-    switch (msg->data.state)
+    switch (msg->data.led_state.state)
     {
     case GPIO_STATE_LED_SOLID:
       ESP_LOGI(TAG_GPIO, "Received message: GPIO_STATE_LED_SOLID");
@@ -308,7 +321,7 @@ static void gpio_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
       {
         xTimerStop(gpio_blink_timer, 0);
       }
-      gpio_set_status_led_level(GPIO_HIGH);
+      gpio_set_led_level(msg->data.led_state.pin, GPIO_HIGH);
       break;
 
     case GPIO_STATE_LED_BLINK:
@@ -331,7 +344,7 @@ static void gpio_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
       {
         xTimerStop(gpio_blink_timer, 0);
       }
-      gpio_set_status_led_level(GPIO_LOW);
+      gpio_set_led_level(msg->data.led_state.pin, GPIO_LOW);
       break;
     }
     break;

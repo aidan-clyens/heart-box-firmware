@@ -142,7 +142,7 @@ static void state_machine_enter_state(eAppState_t new_state)
   switch (new_state)
   {
   case STATE_IDLE:
-    gpio_set_state(GPIO_STATE_LED_OFF);
+    gpio_set_state(LED_STATUS_PIN_2, GPIO_STATE_LED_OFF);
 
     if (sm_http_server)
     {
@@ -179,7 +179,7 @@ static void state_machine_enter_state(eAppState_t new_state)
     break;
 
   case STATE_PROVISIONING:
-    gpio_set_state(GPIO_STATE_LED_BLINK);
+    gpio_set_state(LED_STATUS_PIN_2, GPIO_STATE_LED_BLINK);
     sm_http_server = http_start_webserver();
     if (sm_http_server == NULL)
     {
@@ -352,7 +352,7 @@ static void state_machine_on_message(GenericTask *self, void *msg_buf, size_t ms
     {
       ESP_LOGI(TAG, "Successfully subscribed to AWS IoT topic %s in STATE_AWS_IOT_CONNECTED", MQTT_TOPIC);
 
-      gpio_set_state(GPIO_STATE_LED_SOLID);
+      gpio_set_state(LED_STATUS_PIN_2, GPIO_STATE_LED_SOLID);
 
       // Start AWS IoT Keep Alive task to listen for incoming messages
       aws_iot_start_listening();
@@ -372,6 +372,9 @@ static void state_machine_on_message(GenericTask *self, void *msg_buf, size_t ms
     else if (event == APP_AWS_IOT_EVT_MSG_PRESSED)
     {
       ESP_LOGI(TAG, "Message received from AWS IoT in STATE_AWS_IOT_CONNECTED");
+      gpio_set_state(HEART_LED_ARRAY_PIN, GPIO_STATE_LED_SOLID);
+      vTaskDelay(pdMS_TO_TICKS(1000));
+      gpio_set_state(HEART_LED_ARRAY_PIN, GPIO_STATE_LED_OFF);
     }
     else if (event == APP_AWS_IOT_EVT_MSG_RELEASED)
     {

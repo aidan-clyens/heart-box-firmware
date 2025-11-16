@@ -5,5 +5,5 @@ idf_component_register(
 )
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
-  MQTT_CLIENT_IDENTIFIER="${DEVICE_NAME}"
+  MQTT_CLIENT_IDENTIFIER="${CONFIG_HEARTBOX_DEVICE_NAME}"
 )

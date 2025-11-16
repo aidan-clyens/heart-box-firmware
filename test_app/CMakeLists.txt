@@ -11,24 +11,11 @@ set(EXTRA_COMPONENT_DIRS
   "${ROOT_PATH}/components"
   "${AWS_IOT_PATH}/libraries/coreMQTT"
   "${AWS_IOT_PATH}/libraries/common/"
-  "${ROOT_PATH}/main"
 )
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 
 project(HeartBoxFirmwareTestApp)
-
-# Get config values from sdkconfig
-idf_build_get_property(config_dir CONFIG_DIR)
-include(${config_dir}/sdkconfig.cmake)
-
-set(CERTS_PATH "${ROOT_PATH}/certs/${CONFIG_HEARTBOX_DEVICE_NAME}")
-
-add_definitions(-DDEVICE_NAME="${CONFIG_HEARTBOX_DEVICE_NAME}")
-add_definitions(-DTOPIC_NAME="${CONFIG_HEARTBOX_TOPIC_NAME}")
-add_definitions(-DAWS_IOT_ENDPOINT="${CONFIG_HEARTBOX_AWS_IOT_ENDPOINT}")
-add_definitions(-DTEST_WIFI_SSID="${CONFIG_HEARTBOX_TEST_WIFI_SSID}")
-add_definitions(-DTEST_WIFI_PASSWORD="${CONFIG_HEARTBOX_TEST_WIFI_PASSWORD}")
 
 idf_build_set_property(MINIMAL_BUILD ON)
 

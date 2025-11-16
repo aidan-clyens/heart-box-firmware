@@ -1,8 +1,6 @@
 #include "unity.h"
 #include "unity_fixture.h"
 
-#include "script_helpers.h"
-
 // Include the component header
 #include "aws_iot_task.h"
 #include "wifi_task.h"

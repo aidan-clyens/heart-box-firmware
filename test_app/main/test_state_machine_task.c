@@ -1,8 +1,6 @@
 #include "unity.h"
 #include "unity_fixture.h"
 
-#include "script_helpers.h"
-
 #include "file_system.h"
 #include "gpio_task.h"
 #include "wifi_task.h"
@@ -66,7 +64,7 @@ TEST(state_machine_task, set_invalid_wifi_credentials_in_provisioning)
   wifi_set_sta_credentials("invalid_ssid", "invalid_password");
 
   // Wait for WiFi connection attempt
-  wait_for_connection(CONNECT_TIMEOUT_MS, false);
+  wifi_wait_for_connection(CONNECT_TIMEOUT_MS);
 
   // Check the current state
   state = state_machine_get_current_app_state();
@@ -83,7 +81,7 @@ TEST(state_machine_task, set_valid_wifi_credentials_in_provisioning)
   wifi_set_sta_credentials(TEST_WIFI_SSID, TEST_WIFI_PASSWORD);
 
   // Wait for WiFi connection
-  wait_for_connection(CONNECT_TIMEOUT_MS, true);
+  wifi_wait_for_connection(CONNECT_TIMEOUT_MS);
 
   // Check the current state
   state = state_machine_get_current_app_state();
@@ -104,7 +102,7 @@ TEST(state_machine_task, connect_to_aws_iot)
   wifi_set_sta_credentials(TEST_WIFI_SSID, TEST_WIFI_PASSWORD);
 
   // Wait for WiFi connection
-  wait_for_connection(CONNECT_TIMEOUT_MS, true);
+  wifi_wait_for_connection(CONNECT_TIMEOUT_MS);
 
   // Check the current state
   state = state_machine_get_current_app_state();
@@ -113,7 +111,7 @@ TEST(state_machine_task, connect_to_aws_iot)
   aws_iot_connect(MQTT_BROKER_ENDPOINT);
 
   // Wait for AWS IoT connection
-  wait_for_connection(CONNECT_TIMEOUT_MS, true);
+  wifi_wait_for_connection(CONNECT_TIMEOUT_MS);
 
   // Check the current state
   state = state_machine_get_current_app_state();

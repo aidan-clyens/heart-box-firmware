@@ -81,7 +81,8 @@ static void gpio_set_led_level(gpio_num_t pin, int level)
   }
 
   gpio_led_current_state[pin] = level;
-  ESP_LOGI(TAG_GPIO, "Setting LED pin %d level to %s", pin, level == GPIO_HIGH ? "HIGH" : "LOW");
+  // Reduced to DEBUG level to save stack space in timer callbacks
+  ESP_LOGD(TAG_GPIO, "Setting LED pin %d level to %s", pin, level == GPIO_HIGH ? "HIGH" : "LOW");
   gpio_set_level(pin, gpio_led_current_state[pin]);
 }
 
@@ -99,9 +100,8 @@ static int gpio_get_button_level()
  */
 static void gpio_blink_timer_cb(TimerHandle_t xTimer)
 {
-  static bool on = false;
-  gpio_set_led_level(LED_STATUS_PIN_2, on ? GPIO_HIGH : GPIO_LOW);
-  on = !on;
+  unsigned int current_level = gpio_get_led_level(LED_STATUS_PIN_2);
+  gpio_set_led_level(LED_STATUS_PIN_2, !current_level);
 }
 
 /** @brief Push Button Interrupt Service Routine
@@ -376,8 +376,9 @@ esp_err_t gpio_task_init(void)
     return ESP_ERR_NO_MEM;
   }
 
-  // Start the task
-  esp_err_t ret = generic_task_start(gpio_task, 2048, 10);
+  // Start the task with increased stack size to accommodate logging overhead
+  // 2048 was causing stack overflow with extensive ESP_LOGI calls
+  esp_err_t ret = generic_task_start(gpio_task, 4096, 10);
   if (ret != ESP_OK)
   {
     ESP_LOGE(TAG_GPIO, "Failed to start GPIO GenericTask: %s", esp_err_to_name(ret));

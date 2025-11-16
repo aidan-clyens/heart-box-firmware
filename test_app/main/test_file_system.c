@@ -1,8 +1,6 @@
 #include "unity.h"
 #include "unity_fixture.h"
 
-#include "script_helpers.h"
-
 #include "file_system.h"
 
 static const char *TEST_KEY = "test_key";

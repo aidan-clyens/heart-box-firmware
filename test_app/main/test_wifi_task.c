@@ -1,8 +1,6 @@
 #include "unity.h"
 #include "unity_fixture.h"
 
-#include "script_helpers.h"
-
 // Include the component header
 #include "wifi_task.h"
 #include "file_system.h"

@@ -6,7 +6,6 @@ idf_component_register(SRCS
                         "test_state_machine_task.c"
                         "test_wifi_task.c"
                         "test_gpio_task.c"
-                        "script_helpers.c"
                        INCLUDE_DIRS ""
                        REQUIRES
                             unity

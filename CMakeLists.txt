@@ -18,6 +18,25 @@ include(${config_dir}/sdkconfig.cmake)
 
 set(CERTS_PATH "${CMAKE_CURRENT_LIST_DIR}/certs/${CONFIG_HEARTBOX_DEVICE_NAME}")
 
+# Validate certificate files exist before build
+set(REQUIRED_CERT_FILES
+  "${CERTS_PATH}/AmazonRootCA1.pem"
+  "${CERTS_PATH}/device_certificate.pem.crt"
+  "${CERTS_PATH}/private_key.pem.key"
+)
+
+foreach(CERT_FILE ${REQUIRED_CERT_FILES})
+  if(NOT EXISTS ${CERT_FILE})
+    message(FATAL_ERROR "Certificate file not found: ${CERT_FILE}\n"
+                        "Device: ${CONFIG_HEARTBOX_DEVICE_NAME}\n"
+                        "Certificates directory: ${CERTS_PATH}\n"
+                        "Please ensure certificates are placed in the correct directory.")
+  endif()
+endforeach()
+
+message(STATUS "Certificate validation passed for device: ${CONFIG_HEARTBOX_DEVICE_NAME}")
+message(STATUS "Using certificates from: ${CERTS_PATH}")
+
 add_definitions(-DDEVICE_NAME="${CONFIG_HEARTBOX_DEVICE_NAME}")
 add_definitions(-DTOPIC_NAME="${CONFIG_HEARTBOX_TOPIC_NAME}")
 add_definitions(-DAWS_IOT_ENDPOINT="${CONFIG_HEARTBOX_AWS_IOT_ENDPOINT}")

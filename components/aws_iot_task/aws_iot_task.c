@@ -783,6 +783,26 @@ static esp_err_t aws_iot_on_init(GenericTask *self)
     goto cleanup_semaphore;
   }
 
+  // Verify certificates are null-terminated (required for mbedTLS PEM parsing)
+  if (root_cert_auth_start[network_context.pcServerRootCASize - 1] != '\0')
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Root CA certificate is not null-terminated!");
+    ret = ESP_FAIL;
+    goto cleanup_semaphore;
+  }
+  if (client_cert_start[network_context.pcClientCertSize - 1] != '\0')
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Client certificate is not null-terminated!");
+    ret = ESP_FAIL;
+    goto cleanup_semaphore;
+  }
+  if (client_key_start[network_context.pcClientKeySize - 1] != '\0')
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Client private key is not null-terminated!");
+    ret = ESP_FAIL;
+    goto cleanup_semaphore;
+  }
+
   ESP_LOGI(TAG_AWS_IOT, "AWS IoT TLS credentials for client %s:", MQTT_CLIENT_IDENTIFIER);
   ESP_LOGI(TAG_AWS_IOT, "Using AmazonRootCA1.pem (%d bytes)",
            (int)network_context.pcServerRootCASize);

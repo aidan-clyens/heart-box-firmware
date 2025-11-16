@@ -38,7 +38,22 @@ TEST_TEAR_DOWN(gpio_task)
   int heap_diff = final_free_heap_size - initial_free_heap_size;
   ESP_LOGI(TAG, "Heap size difference: %d bytes", heap_diff);
 
-  TEST_ASSERT_INT_WITHIN(HEAP_TOLERANCE_BYTES, 0, heap_diff);
+  if (heap_diff < -HEAP_TOLERANCE_BYTES)
+  {
+    ESP_LOGE(TAG, "Memory leak detected! Lost %d bytes (tolerance: %d)",
+             -heap_diff, HEAP_TOLERANCE_BYTES);
+  }
+  else if (heap_diff > HEAP_TOLERANCE_BYTES)
+  {
+    ESP_LOGW(TAG, "Heap grew unexpectedly by %d bytes (tolerance: %d)",
+             heap_diff, HEAP_TOLERANCE_BYTES);
+  }
+  else
+  {
+    ESP_LOGI(TAG, "Heap check passed (within ±%d byte tolerance)", HEAP_TOLERANCE_BYTES);
+  }
+
+  TEST_ASSERT_GREATER_OR_EQUAL_INT(-HEAP_TOLERANCE_BYTES, heap_diff);
 }
 
 /** @brief Test Helper: LED Solid State

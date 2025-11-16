@@ -15,8 +15,6 @@
 
 #include "state_machine_task.h"
 
-#define MAX_WIFI_CONNECT_RETRIES 5
-
 // --- Module State ---
 static const char *TAG_WIFI = "WIFI";
 static GenericTask *wifi_task = NULL;
@@ -174,6 +172,11 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
       ESP_LOGI(TAG_WIFI, "Received event - WIFI_EVENT_AP_START");
       is_wifi_started = true;
       state_machine_post_event(APP_EVT_AP_STARTED, APP_WIFI);
+      break;
+
+    case WIFI_EVENT_STA_STOP:
+      ESP_LOGI(TAG_WIFI, "Received event - WIFI_EVENT_STA_STOP");
+      is_wifi_started = false;
       break;
 
     case WIFI_EVENT_AP_STOP:
@@ -373,40 +376,79 @@ static esp_err_t wifi_on_stop(GenericTask *self)
 {
   esp_err_t ret;
 
-  // Step 1: Unregister IP event handler
+  // Step 1: Disconnect if connected (releases DHCP lease)
+  if (is_wifi_connected)
+  {
+    ret = esp_wifi_disconnect();
+    if (ret != ESP_OK)
+    {
+      ESP_LOGE(TAG_WIFI, "esp_wifi_disconnect failed: %s", esp_err_to_name(ret));
+    }
+    // Brief delay to allow disconnect to complete
+    vTaskDelay(pdMS_TO_TICKS(100));
+  }
+
+  // Step 2: Stop WiFi and wait for completion
+  if (is_wifi_started)
+  {
+    ret = esp_wifi_stop();
+    if (ret != ESP_OK && ret != ESP_ERR_WIFI_NOT_STARTED)
+    {
+      ESP_LOGE(TAG_WIFI, "esp_wifi_stop failed: %s", esp_err_to_name(ret));
+    }
+    
+    // Wait for WiFi to actually stop (WIFI_EVENT_STA_STOP or WIFI_EVENT_AP_STOP)
+    // Event handlers MUST remain registered to receive these events
+    // Give it up to 2 seconds
+    int wait_count = 0;
+    while (is_wifi_started && wait_count < 200)
+    {
+      vTaskDelay(pdMS_TO_TICKS(10));
+      wait_count++;
+    }
+    
+    if (is_wifi_started)
+    {
+      ESP_LOGW(TAG_WIFI, "WiFi did not stop gracefully within timeout");
+    }
+  }
+
+  // Step 3: Unregister IP event handler (after WiFi stopped)
   ret = esp_event_handler_instance_unregister(IP_EVENT, IP_EVENT_STA_GOT_IP, instance_got_ip);
   if (ret != ESP_OK)
   {
     ESP_LOGE(TAG_WIFI, "esp_event_handler_instance_unregister (IP_EVENT) failed: %s", esp_err_to_name(ret));
   }
 
-  // Step 2: Unregister WiFi event handler
+  // Step 4: Unregister WiFi event handler (after WiFi stopped)
   ret = esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, instance_any_id);
   if (ret != ESP_OK)
   {
     ESP_LOGE(TAG_WIFI, "esp_event_handler_instance_unregister (WIFI_EVENT) failed: %s", esp_err_to_name(ret));
   }
 
-  // Step 3: Stop WiFi (ignore error if already stopped)
-  ret = esp_wifi_stop();
-  if (ret != ESP_OK && ret != ESP_ERR_WIFI_NOT_STARTED)
+  // Step 5: Clear default WiFi handlers before deinit
+  // This prevents "duplicate key" errors when recreating netifs
+  if (sta_netif != NULL)
   {
-    ESP_LOGE(TAG_WIFI, "esp_wifi_stop failed: %s", esp_err_to_name(ret));
+    esp_wifi_clear_default_wifi_driver_and_handlers(sta_netif);
+  }
+  if (ap_netif != NULL)
+  {
+    esp_wifi_clear_default_wifi_driver_and_handlers(ap_netif);
   }
 
-  // Step 4: Deinitialize WiFi driver
+  // Step 6: Deinitialize WiFi driver
   ret = esp_wifi_deinit();
   if (ret != ESP_OK)
   {
     ESP_LOGE(TAG_WIFI, "esp_wifi_deinit failed: %s", esp_err_to_name(ret));
   }
 
-  // Step 5: Clear default WiFi handlers before destroying netifs
-  // This prevents "duplicate key" errors when recreating netifs
-  esp_wifi_clear_default_wifi_driver_and_handlers(sta_netif);
-  esp_wifi_clear_default_wifi_driver_and_handlers(ap_netif);
+  // Allow WiFi driver cleanup to complete (internal tasks, timers, etc.)
+  vTaskDelay(pdMS_TO_TICKS(500));
 
-  // Step 6: Destroy network interfaces
+  // Step 7: Destroy network interfaces
   if (sta_netif != NULL)
   {
     esp_netif_destroy(sta_netif);
@@ -422,6 +464,7 @@ static esp_err_t wifi_on_stop(GenericTask *self)
   // Reset state flags
   is_wifi_started = false;
   is_wifi_connected = false;
+  wifi_connect_retries = 0;
 
   ESP_LOGI(TAG_WIFI, "WiFi task stopped successfully");
   return ESP_OK;

@@ -10,6 +10,8 @@ extern "C" {
 
 #include "message_types.h"
 
+#define MAX_WIFI_CONNECT_RETRIES 5
+
 /** @brief Initialize and start the WiFi task
  *  @return ESP_OK on success, error code on failure
  */

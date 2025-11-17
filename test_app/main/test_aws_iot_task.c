@@ -5,20 +5,25 @@
 #include "aws_iot_task.h"
 #include "wifi_task.h"
 
+#include "application.h"
+
 #include "esp_log.h"
 
-#ifndef MQTT_CLIENT_IDENTIFIER
-#error "MQTT_CLIENT_IDENTIFIER must be defined in sdkconfig"
-#endif // MQTT_CLIENT_IDENTIFIER
+#define MQTT_CLIENT_IDENTIFIER "Heart_Box_1"
+// #ifndef MQTT_CLIENT_IDENTIFIER
+// #error "MQTT_CLIENT_IDENTIFIER must be defined in sdkconfig"
+// #endif // MQTT_CLIENT_IDENTIFIER
 #define MQTT_CLIENT_IDENTIFIER_LENGTH ((uint16_t)(sizeof(MQTT_CLIENT_IDENTIFIER) - 1))
 
-#ifndef MQTT_BROKER_ENDPOINT
-#error "MQTT_BROKER_ENDPOINT must be defined in sdkconfig"
-#endif // MQTT_BROKER_ENDPOINT
+#define MQTT_BROKER_ENDPOINT "airgahux2exxu-ats.iot.us-east-1.amazonaws.com"
+// #ifndef MQTT_BROKER_ENDPOINT
+// #error "MQTT_BROKER_ENDPOINT must be defined in sdkconfig"
+// #endif // MQTT_BROKER_ENDPOINT
 
-#ifndef MQTT_TOPIC
-#error "MQTT_TOPIC must be defined in sdkconfig"
-#endif // MQTT_TOPIC
+#define MQTT_TOPIC "heartbox/1"
+// #ifndef MQTT_TOPIC
+// #error "MQTT_TOPIC must be defined in sdkconfig"
+// #endif // MQTT_TOPIC
 #define MQTT_TOPIC_LENGTH ((uint16_t)(sizeof(MQTT_TOPIC) - 1))
 
 #define DELAY_TIME_MS 500

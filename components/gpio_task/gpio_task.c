@@ -7,8 +7,6 @@
 
 #include "state_machine_task.h"
 
-// #define DEBUG
-
 #define NUM_GPIO_PINS 40 // How many GPIO pins are available on the ESP32?
 
 static const char *TAG_GPIO = "GPIO_TASK";
@@ -136,30 +134,29 @@ static void gpio_button_task(void *args)
 
   while (true)
   {
-#ifdef DEBUG
-    // Simulate button press every 10 seconds
-    vTaskDelay(pdMS_TO_TICKS(10000));
-
-    state_machine_post_event(APP_GPIO_EVT_BUTTON_PRESSED, APP_GPIO);
-    vTaskDelay(pdMS_TO_TICKS(1000));
-    state_machine_post_event(APP_GPIO_EVT_BUTTON_RELEASED, APP_GPIO);
-#else
     if (xSemaphoreTake(gpio_button_semaphore, portMAX_DELAY))
     {
       gpio_intr_disable(BUTTON_PIN);
 
       vTaskDelay(pdMS_TO_TICKS(BUTTON_DEBOUNCE_TIME_MS));
 
-      gpio_led_current_state[HEART_LED_ARRAY_PIN] = gpio_get_button_level();
-      ESP_LOGI(TAG_GPIO, "Received Push Button Event - Button level: %d", gpio_led_current_state[HEART_LED_ARRAY_PIN]);
-      gpio_set_level(HEART_LED_ARRAY_PIN, gpio_led_current_state[HEART_LED_ARRAY_PIN]);
+      // Clear any pending events that arrived during debounce
+      while (xSemaphoreTake(gpio_button_semaphore, 0) == pdTRUE)
+      {
+        // Drain the semaphore
+      }
+
+      int button_level = gpio_get_button_level();
+      gpio_led_current_state[HEART_LED_ARRAY_PIN] = button_level;
+      ESP_LOGI(TAG_GPIO, "Received Push Button Event - Button level: %d", button_level);
+      gpio_set_led_level(HEART_LED_ARRAY_PIN, button_level);
 
       // Notify state machine
-      state_machine_post_event(APP_GPIO_EVT_BUTTON_PRESSED, APP_GPIO);
+      eAppMsgType_t event_type = (button_level == GPIO_HIGH) ? APP_GPIO_EVT_BUTTON_PRESSED : APP_GPIO_EVT_BUTTON_RELEASED;
+      state_machine_post_event(event_type, APP_GPIO);
 
       gpio_intr_enable(BUTTON_PIN);
     }
-#endif // DEBUG
   }
 }
 

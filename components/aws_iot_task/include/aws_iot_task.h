@@ -20,6 +20,18 @@ typedef struct
   unsigned int messages_received;         /**< Total number of messages received */
 } AwsIotStatistics_t;
 
+/** @struct AwsIotProfilingData_t
+ *  @brief Structure to hold AWS IoT task profiling data for measuring message latency
+ */
+typedef struct
+{
+  unsigned long publish_timestamp_ms;     /**< Timestamp when message was published */
+  unsigned long puback_timestamp_ms;      /**< Timestamp when PUBACK was received */
+  unsigned long receive_timestamp_ms;     /**< Timestamp when message was received */
+  unsigned int publish_packet_id;         /**< Packet ID of the published message */
+  bool profiling_active;                  /**< Flag indicating if profiling is active */
+} AwsIotProfilingData_t;
+
 /** @brief Public API: Initialize and start the AWS IoT task
  *  @return ESP_OK on success, error code on failure
  */
@@ -86,6 +98,20 @@ const char *aws_iot_get_mqtt_topic(void);
  *  @return Structure containing AWS IoT task statistics
  */
 AwsIotStatistics_t aws_iot_get_statistics(void);
+
+/** @brief Public API: Enable profiling for the next message publish
+ *  @details This enables timing measurements for publish -> PUBACK -> receive cycle
+ */
+void aws_iot_enable_profiling(void);
+
+/** @brief Public API: Get profiling data from the last profiled message
+ *  @return Structure containing profiling timestamps and packet ID
+ */
+AwsIotProfilingData_t aws_iot_get_profiling_data(void);
+
+/** @brief Public API: Reset profiling data
+ */
+void aws_iot_reset_profiling(void);
 
 #ifdef __cplusplus
 }

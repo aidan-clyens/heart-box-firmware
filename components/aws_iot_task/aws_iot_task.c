@@ -87,6 +87,7 @@ static TaskHandle_t keep_alive_task_handle = NULL;
 static volatile bool keep_alive_should_stop = false;
 
 static AwsIotStatistics_t aws_iot_statistics = {0};
+static AwsIotProfilingData_t aws_iot_profiling_data = {0};
 
 /** @brief Post a command message to the AWS IoT task
  *  @param msg The message to post
@@ -264,6 +265,30 @@ const char *aws_iot_get_mqtt_topic(void)
 AwsIotStatistics_t aws_iot_get_statistics(void)
 {
   return aws_iot_statistics;
+}
+
+/** @brief Public API: Enable profiling for the next message publish */
+void aws_iot_enable_profiling(void)
+{
+  aws_iot_profiling_data.profiling_active = true;
+  aws_iot_profiling_data.publish_timestamp_ms = 0;
+  aws_iot_profiling_data.puback_timestamp_ms = 0;
+  aws_iot_profiling_data.receive_timestamp_ms = 0;
+  aws_iot_profiling_data.publish_packet_id = 0;
+  ESP_LOGI(TAG_AWS_IOT, "Profiling enabled for next message publish");
+}
+
+/** @brief Public API: Get profiling data from the last profiled message */
+AwsIotProfilingData_t aws_iot_get_profiling_data(void)
+{
+  return aws_iot_profiling_data;
+}
+
+/** @brief Public API: Reset profiling data */
+void aws_iot_reset_profiling(void)
+{
+  memset(&aws_iot_profiling_data, 0, sizeof(aws_iot_profiling_data));
+  ESP_LOGI(TAG_AWS_IOT, "Profiling data reset");
 }
 
 /** @brief AWS IoT Keep Alive Task */
@@ -656,6 +681,15 @@ static void aws_iot_publish_button_event_cmd(const char* state)
     return;
   }
 
+  // Capture profiling timestamp if profiling is active
+  if (aws_iot_profiling_data.profiling_active)
+  {
+    aws_iot_profiling_data.publish_timestamp_ms = Clock_GetTimeMs();
+    aws_iot_profiling_data.publish_packet_id = packet_id;
+    ESP_LOGI(TAG_AWS_IOT, "[PROFILING] Message published at %lu ms (Packet ID: %u)",
+             aws_iot_profiling_data.publish_timestamp_ms, packet_id);
+  }
+
   // TODO - Wait for PUBACK
 
   ESP_LOGI(TAG_AWS_IOT, "Published button event to topic %s: %s", topic, payload);
@@ -674,6 +708,14 @@ static void aws_iot_handle_publish_packet(MQTTPublishInfo_t * p_publish_info, un
     packet_id,
     p_publish_info->topicNameLength,
     p_publish_info->pTopicName);
+
+  // Capture profiling timestamp if profiling is active
+  if (aws_iot_profiling_data.profiling_active && aws_iot_profiling_data.receive_timestamp_ms == 0)
+  {
+    aws_iot_profiling_data.receive_timestamp_ms = Clock_GetTimeMs();
+    ESP_LOGI(TAG_AWS_IOT, "[PROFILING] Message received at %lu ms (Packet ID: %u)",
+             aws_iot_profiling_data.receive_timestamp_ms, packet_id);
+  }
 
   // TODO - Acknowledge the PUBLISH if QoS 1
 
@@ -799,6 +841,14 @@ static void aws_iot_event_callback(MQTTContext_t * p_mqtt_context,
 
       case MQTT_PACKET_TYPE_PUBACK:
         ESP_LOGI(TAG_AWS_IOT, "Received MQTT PUBACK packet (Packet ID: %u)", packet_id);
+        // Capture profiling timestamp if profiling is active and packet ID matches
+        if (aws_iot_profiling_data.profiling_active && 
+            aws_iot_profiling_data.publish_packet_id == packet_id)
+        {
+          aws_iot_profiling_data.puback_timestamp_ms = Clock_GetTimeMs();
+          ESP_LOGI(TAG_AWS_IOT, "[PROFILING] PUBACK received at %lu ms (Packet ID: %u)",
+                   aws_iot_profiling_data.puback_timestamp_ms, packet_id);
+        }
         // TODO - Handle PUBACK
         break;
 
@@ -1060,6 +1110,9 @@ static esp_err_t aws_iot_on_stop(GenericTask *self)
 
   // Step 8: Clear statistics
   (void)memset(&aws_iot_statistics, 0, sizeof(aws_iot_statistics));
+
+  // Step 9: Clear profiling data
+  (void)memset(&aws_iot_profiling_data, 0, sizeof(aws_iot_profiling_data));
 
   ESP_LOGI(TAG_AWS_IOT, "AWS IoT Task stopped.");
   return final_ret;

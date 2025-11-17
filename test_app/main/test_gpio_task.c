@@ -196,6 +196,7 @@ TEST(gpio_task, blink_to_solid_stops_timer)
 /** @brief Test: Push Button ISR
  *  @test Expected: Button press updates LED state correctly
  */
+#ifdef DEBUG_GPIO_BUTTON_ISR
 TEST(gpio_task, push_button_isr)
 {
   gpio_set_button_level(GPIO_LOW);
@@ -220,6 +221,7 @@ TEST(gpio_task, push_button_isr)
   vTaskDelay(pdMS_TO_TICKS(BUTTON_DEBOUNCE_TIME_MS + 100));
   TEST_ASSERT_EQUAL_UINT(GPIO_LOW, gpio_get_led_level(HEART_LED_ARRAY_PIN));
 }
+#endif // DEBUG_GPIO_BUTTON_ISR
 
 /** @brief Test: Rapid State Changes
  *  @test Expected: GPIO task handles rapid state changes without errors
@@ -253,7 +255,9 @@ TEST_GROUP_RUNNER(gpio_task)
   RUN_TEST_CASE(gpio_task, led_blink);
   RUN_TEST_CASE(gpio_task, blink_restart_deterministic);
   RUN_TEST_CASE(gpio_task, blink_to_solid_stops_timer);
+#ifdef DEBUG_GPIO_BUTTON_ISR
   RUN_TEST_CASE(gpio_task, push_button_isr);
+#endif // DEBUG_GPIO_BUTTON_ISR
   RUN_TEST_CASE(gpio_task, rapid_state_changes);
 }
 

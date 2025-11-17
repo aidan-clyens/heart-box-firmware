@@ -7,6 +7,7 @@ idf_component_register(SRCS
                         "test_state_machine_task.c"
                         "test_wifi_task.c"
                         "test_gpio_task.c"
+                        "test_gpio_interrupt.c"
                        INCLUDE_DIRS ""
                        INCLUDE_DIRS "../../include"
                        REQUIRES

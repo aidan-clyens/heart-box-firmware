@@ -108,7 +108,7 @@ TEST(state_machine_task, connect_to_aws_iot)
   state = state_machine_get_current_app_state();
   TEST_ASSERT_EQUAL(STATE_WIFI_CONNECTED, state);
 
-  aws_iot_connect(MQTT_BROKER_ENDPOINT);
+  aws_iot_connect(MQTT_BROKER_ENDPOINT, MQTT_CLIENT_IDENTIFIER);
 
   // Wait for AWS IoT connection
   wifi_wait_for_connection(CONNECT_TIMEOUT_MS);

@@ -24,12 +24,6 @@
 #define MQTT_AWS_IOT_TASK_STACK_SIZE 4096
 #define MQTT_KEEP_ALIVE_TASK_STACK_SIZE 4096
 
-// User definitions
-#ifndef MQTT_CLIENT_IDENTIFIER
-#define MQTT_CLIENT_IDENTIFIER "Default"
-#endif // MQTT_CLIENT_IDENTIFIER
-#define MQTT_CLIENT_IDENTIFIER_LENGTH ((uint16_t)(sizeof(MQTT_CLIENT_IDENTIFIER) - 1))
-
 #define MQTT_PORT 8883
 
 // Time definitions
@@ -68,6 +62,7 @@ static const char *MSG_BUTTON_RELEASED = "released";
 // MQTT connection
 static MQTTContext_t mqtt_context = {0};
 static MQTTConnectInfo_t connect_info = {0};
+static char *mqtt_client_identifier = NULL;
 static char *mqtt_broker_url = NULL;
 
 // Network
@@ -105,18 +100,37 @@ static BaseType_t aws_iot_post_msg(AwsIotMsg_t msg)
   return generic_task_post_msg(aws_iot_task, &msg, sizeof(AwsIotMsg_t));
 }
 
-/** @brief Public API: Request a connection to the configured AWS IoT broker */
-void aws_iot_connect(const char *broker_url)
+/** @brief Public API: Request a connection to the configured AWS IoT broker
+ *  @param broker_url The AWS IoT broker URL
+ *  @param client_identifier The MQTT client identifier
+ */
+void aws_iot_connect(const char *broker_url, const char *client_identifier)
 {
+  if (broker_url == NULL || client_identifier == NULL)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Cannot connect to AWS IoT with NULL broker URL or client identifier");
+    return;
+  }
+
+  AwsIotConnectData_t connect_data;
+  strncpy(connect_data.broker_url, broker_url, MAX_URL_LEN);
+  strncpy(connect_data.client_identifier, client_identifier, MAX_CLIENT_IDENTIFIER_LEN);
+
   AwsIotMsg_t msg;
   msg.type = APP_AWS_IOT_CMD_CONNECT;
-  strncpy(msg.data.broker_url, broker_url, MAX_URL_LEN);
+  msg.data.connect_data = connect_data;
   aws_iot_post_msg(msg);
 }
 
 /** @brief Public API: Subscribe to a topic on AWS IoT */
 void aws_iot_subscribe_to_topic(const char *topic)
 {
+  if (topic == NULL)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Cannot subscribe to NULL topic");
+    return;
+  }
+
   AwsIotMsg_t msg;
   msg.type = APP_AWS_IOT_CMD_SUBSCRIBE;
   strncpy(msg.data.topic, topic, MAX_HOSTNAME_LEN);
@@ -205,6 +219,19 @@ esp_err_t aws_iot_wait_for_listening(unsigned int timeout_ms)
   return ESP_ERR_TIMEOUT;
 }
 
+/** @brief Public API: Get the current MQTT client identifier
+ *  @return Current MQTT client identifier string
+ */
+const char *aws_iot_get_mqtt_client_identifier(void)
+{
+  if (mqtt_client_identifier == NULL || mqtt_client_identifier[0] == '\0')
+  {
+    return "";
+  }
+
+  return mqtt_client_identifier;
+}
+
 /** @brief Public API: Get the current MQTT broker URL
  *  @return Current MQTT broker URL string
  */
@@ -268,13 +295,43 @@ static void aws_iot_keep_alive_task()
   vTaskDelete(NULL);
 }
 
-/** @brief Establish a TLS connection and MQTT session with AWS IoT broker */
-static MQTTStatus_t aws_iot_establish_mqtt_connection(const char *broker_url)
+/** @brief Disconnect the TLS connection
+ *  @return ESP_OK if disconnected successfully, ESP_FAIL otherwise
+ */
+static int aws_iot_tls_disconnect()
+{
+  if (network_context.pxTls == NULL)
+  {
+    ESP_LOGW(TAG_AWS_IOT, "TLS is not connected, skipping disconnect.");
+    return ESP_OK;
+  }
+
+  ESP_LOGI(TAG_AWS_IOT, "Disconnecting TLS...");
+
+  TlsTransportStatus_t tls_status = xTlsDisconnect(&network_context);
+  if (tls_status != TLS_TRANSPORT_SUCCESS)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Failed to disconnect TLS cleanly: Status = %d", tls_status);
+    return ESP_FAIL;
+  }
+
+  network_context.pxTls = NULL;
+
+  ESP_LOGI(TAG_AWS_IOT, "TLS disconnected successfully.");
+  return ESP_OK;
+}
+
+/** @brief Establish a TLS connection and MQTT session with AWS IoT broker
+ *  @param broker_url The AWS IoT broker URL
+ *  @param client_identifier The MQTT client identifier
+ *  @return MQTTStatus_t indicating success or failure
+ */
+static MQTTStatus_t aws_iot_establish_mqtt_connection(const char *broker_url, const char *client_identifier)
 {
   // Validate broker URL
   if (broker_url == NULL || strlen(broker_url) == 0)
   {
-    ESP_LOGE(TAG_AWS_IOT, "Invalid broker URL");
+    ESP_LOGE(TAG_AWS_IOT, "Invalid broker URL: %s", broker_url);
     return MQTTBadParameter;
   }
 
@@ -284,27 +341,26 @@ static MQTTStatus_t aws_iot_establish_mqtt_connection(const char *broker_url)
   xSemaphoreTake(network_context.xTlsContextSemaphore, portMAX_DELAY);
   network_context.pcHostname = broker_url;
   connect_info.cleanSession = !session_present;
+  connect_info.pClientIdentifier = client_identifier;
+  connect_info.clientIdentifierLength = strlen(client_identifier);
   xSemaphoreGive(network_context.xTlsContextSemaphore);
 
   TlsTransportStatus_t tls_status = xTlsConnect(&network_context);
-
   if (tls_status != TLS_TRANSPORT_SUCCESS)
   {
-    ESP_LOGE(TAG_AWS_IOT, "TLS connection failed: Status = %d.", tls_status);
-
     switch (tls_status)
     {
     case TLS_TRANSPORT_INVALID_CREDENTIALS:
-      ESP_LOGE(TAG_AWS_IOT, "Invalid credentials - check certificate/key");
+      ESP_LOGE(TAG_AWS_IOT, "TLS connection failed: Invalid credentials - check certificate/key");
       break;
     case TLS_TRANSPORT_HANDSHAKE_FAILED:
-      ESP_LOGE(TAG_AWS_IOT, "TLS handshake failed - check CA cert and endpoint");
+      ESP_LOGE(TAG_AWS_IOT, "TLS connection failed: TLS handshake failed - check CA cert and endpoint URL");
       break;
     case TLS_TRANSPORT_CONNECT_FAILURE:
-      ESP_LOGE(TAG_AWS_IOT, "Connection failure - check network and endpoint");
+      ESP_LOGE(TAG_AWS_IOT, "TLS connection failed: TLS Connection failure - check network and endpoint URL");
       break;
     default:
-      ESP_LOGE(TAG_AWS_IOT, "Unknown TLS error");
+      ESP_LOGE(TAG_AWS_IOT, "TLS connection failed: Unknown TLS error");
       break;
     }
     return MQTTServerRefused;
@@ -313,12 +369,30 @@ static MQTTStatus_t aws_iot_establish_mqtt_connection(const char *broker_url)
   ESP_LOGI(TAG_AWS_IOT, "TLS connection established successfully.");
   ESP_LOGI(TAG_AWS_IOT, "Establishing MQTT connection...");
 
+  // Verify MQTT client identifier is set
+  if (connect_info.pClientIdentifier == NULL || connect_info.clientIdentifierLength == 0)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "MQTT client identifier is not set");
+    // Disconnect TLS on MQTT connection failure
+    if (aws_iot_tls_disconnect() != ESP_OK)
+    {
+      ESP_LOGE(TAG_AWS_IOT, "Failed to disconnect TLS after MQTT connection failure.");
+    }
+    return MQTTBadParameter;
+  }
+
   // Now connect MQTT over the established TLS connection
   mqtt_status = MQTT_Connect(&mqtt_context, &connect_info, NULL, MQTT_CONNACK_RECV_TIMEOUT_MS, &session_present);
   if (mqtt_status != MQTTSuccess)
   {
     ESP_LOGE(TAG_AWS_IOT, "MQTT connection failed: Status = %s.", MQTT_Status_strerror(mqtt_status));
-    xTlsDisconnect(&network_context);
+    ESP_LOGE(TAG_AWS_IOT, "Disconnecting TLS due to MQTT connection failure.");
+    // Disconnect TLS on MQTT connection failure
+    if (aws_iot_tls_disconnect() != ESP_OK)
+    {
+      ESP_LOGE(TAG_AWS_IOT, "Failed to disconnect TLS after MQTT connection failure.");
+    }
+
     return mqtt_status;
   }
 
@@ -326,11 +400,20 @@ static MQTTStatus_t aws_iot_establish_mqtt_connection(const char *broker_url)
   return mqtt_status;
 }
 
-/** @brief Subscribe to the configured AWS IoT topic */
+/** @brief Subscribe to the configured AWS IoT topic
+ *  @param topic The MQTT topic to subscribe to
+ */
 static void aws_iot_subscribe_to_topic_cmd(const char* topic)
 {
   MQTTStatus_t mqtt_status;
   ESP_LOGI(TAG_AWS_IOT, "Subscribing to topic %s...", topic);
+
+  // Verify topic parameter
+  if (topic == NULL || strlen(topic) == 0)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Invalid topic: %s", topic);
+    return;
+  }
 
   // Free previous topic if it exists
   if (mqtt_topic != NULL)
@@ -416,9 +499,16 @@ static void aws_iot_subscribe_to_topic_cmd(const char* topic)
 }
 
 /** @brief Handle the AWS IoT connect command */
-static void aws_iot_connect_cmd(const char* broker_url)
+static void aws_iot_connect_cmd(const char* broker_url, const char* client_identifier)
 {
-  ESP_LOGI(TAG_AWS_IOT, "Connecting to AWS IoT broker at %s...", broker_url);
+  ESP_LOGI(TAG_AWS_IOT, "%s connecting to AWS IoT broker at %s...", client_identifier, broker_url);
+
+  // Free previous client identifier if it exists
+  if (mqtt_client_identifier != NULL)
+  {
+    free(mqtt_client_identifier);
+    mqtt_client_identifier = NULL;
+  }
 
   // Free previous broker URL if it exists
   if (mqtt_broker_url != NULL)
@@ -428,21 +518,38 @@ static void aws_iot_connect_cmd(const char* broker_url)
   }
   aws_iot_statistics.connection_attempts++;
 
-  // Validate broker URL
-  if (broker_url == NULL || strlen(broker_url) == 0)
+  // Validate client identifier
+  if (client_identifier == NULL || strlen(client_identifier) == 0)
   {
-    ESP_LOGE(TAG_AWS_IOT, "Invalid broker URL");
+    ESP_LOGE(TAG_AWS_IOT, "Invalid client identifier: %s", client_identifier);
     state_machine_post_event(APP_AWS_IOT_EVT_DISCONNECTED, APP_AWS_IOT);
     return;
   }
 
-  MQTTStatus_t mqtt_status = aws_iot_establish_mqtt_connection(broker_url);
-  if (mqtt_status != MQTTSuccess)
+  // Validate broker URL
+  if (broker_url == NULL || strlen(broker_url) == 0)
   {
-    ESP_LOGE(TAG_AWS_IOT, "Failed to establish TLS/MQTT session to AWS IoT broker %s: %s", broker_url, MQTT_Status_strerror(mqtt_status));
+    ESP_LOGE(TAG_AWS_IOT, "Invalid broker URL: %s", broker_url);
     state_machine_post_event(APP_AWS_IOT_EVT_DISCONNECTED, APP_AWS_IOT);
     return;
   }
+
+  MQTTStatus_t mqtt_status = aws_iot_establish_mqtt_connection(broker_url, client_identifier);
+  if (mqtt_status != MQTTSuccess)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "%s failed to establish TLS/MQTT session to AWS IoT broker %s: %s", client_identifier, broker_url, MQTT_Status_strerror(mqtt_status));
+    state_machine_post_event(APP_AWS_IOT_EVT_DISCONNECTED, APP_AWS_IOT);
+    return;
+  }
+
+  // Allocate and copy the client identifier string
+  mqtt_client_identifier = malloc(strlen(client_identifier) + 1);
+  if (mqtt_client_identifier == NULL)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Failed to allocate memory for client identifier");
+    return;
+  }
+  strcpy(mqtt_client_identifier, client_identifier);
 
   // Allocate and copy the broker URL string
   mqtt_broker_url = malloc(strlen(broker_url) + 1);
@@ -454,7 +561,7 @@ static void aws_iot_connect_cmd(const char* broker_url)
   strcpy(mqtt_broker_url, broker_url);
   
   state_machine_post_event(APP_AWS_IOT_EVT_CONNECTED, APP_AWS_IOT);
-  ESP_LOGI(TAG_AWS_IOT, "Connected to AWS IoT %s successfully.", mqtt_broker_url);
+  ESP_LOGI(TAG_AWS_IOT, "%s connected to AWS IoT %s successfully.", mqtt_client_identifier, mqtt_broker_url);
 
   aws_iot_statistics.successful_connections++;
 }
@@ -491,7 +598,15 @@ static void aws_iot_publish_button_event_cmd(const char* state)
     return;
   }
 
-  if (cJSON_AddStringToObject(json, MSG_CLIENT_TAG, MQTT_CLIENT_IDENTIFIER) == NULL)
+  // Verify the client identifier is set
+  if (mqtt_client_identifier == NULL || mqtt_client_identifier[0] == '\0')
+  {
+    ESP_LOGE(TAG_AWS_IOT, "MQTT client identifier is not set, cannot publish button event.");
+    cJSON_Delete(json);
+    return;
+  }
+
+  if (cJSON_AddStringToObject(json, MSG_CLIENT_TAG, mqtt_client_identifier) == NULL)
   {
     ESP_LOGE(TAG_AWS_IOT, "Failed to create JSON payload for button event");
     cJSON_Delete(json);
@@ -583,8 +698,16 @@ static void aws_iot_handle_publish_packet(MQTTPublishInfo_t * p_publish_info, un
 
     aws_iot_statistics.messages_received++;
 
+    // Verify client identifier is set
+    if (mqtt_client_identifier == NULL || mqtt_client_identifier[0] == '\0')
+    {
+      ESP_LOGW(TAG_AWS_IOT, "MQTT client identifier is not set, ignoring message.");
+      cJSON_Delete(json);
+      return;
+    }
+
     // If client identifier does not match this device, notify the State Machine task
-    if (strcmp(client_json->valuestring, MQTT_CLIENT_IDENTIFIER) != 0)
+    if (strcmp(client_json->valuestring, mqtt_client_identifier) != 0)
     {
       ESP_LOGI(TAG_AWS_IOT, "Handling button event from %s", client_json->valuestring);
       if (strcmp(button_json->valuestring, MSG_BUTTON_PRESSED) == 0)
@@ -706,6 +829,9 @@ static esp_err_t aws_iot_on_init(GenericTask *self)
   TransportInterface_t transport = {0};
   esp_err_t ret;
 
+  // Step 0: Clear network context (important for re-initialization between tests)
+  memset(&network_context, 0, sizeof(NetworkContext_t));
+
   // Step 1: Create MQTT event group
   mqtt_event_group = xEventGroupCreate();
   if (mqtt_event_group == NULL)
@@ -803,7 +929,7 @@ static esp_err_t aws_iot_on_init(GenericTask *self)
     goto cleanup_semaphore;
   }
 
-  ESP_LOGI(TAG_AWS_IOT, "AWS IoT TLS credentials for client %s:", MQTT_CLIENT_IDENTIFIER);
+  ESP_LOGI(TAG_AWS_IOT, "AWS IoT TLS credentials");
   ESP_LOGI(TAG_AWS_IOT, "Using AmazonRootCA1.pem (%d bytes)",
            (int)network_context.pcServerRootCASize);
   ESP_LOGI(TAG_AWS_IOT, "Using device_certificate.pem.crt (%d bytes)",
@@ -815,8 +941,6 @@ static esp_err_t aws_iot_on_init(GenericTask *self)
 
   // Step 7: Initialize MQTT connection info
   connect_info.cleanSession = true;
-  connect_info.pClientIdentifier = MQTT_CLIENT_IDENTIFIER;
-  connect_info.clientIdentifierLength = MQTT_CLIENT_IDENTIFIER_LENGTH;
   connect_info.keepAliveSeconds = MQTT_KEEP_ALIVE_INTERVAL_S;
 
   ESP_LOGI(TAG_AWS_IOT, "AWS IoT Task initialized successfully.");
@@ -871,6 +995,7 @@ static esp_err_t aws_iot_on_stop(GenericTask *self)
   // Step 2: Disconnect MQTT if connected
   if (mqtt_context.connectStatus == MQTTConnected)
   {
+    ESP_LOGI(TAG_AWS_IOT, "Disconnecting MQTT...");
     MQTTStatus_t mqtt_status = MQTT_Disconnect(&mqtt_context);
     if (mqtt_status != MQTTSuccess)
     {
@@ -882,19 +1007,21 @@ static esp_err_t aws_iot_on_stop(GenericTask *self)
     {
       ESP_LOGI(TAG_AWS_IOT, "MQTT disconnected successfully."); 
     }
-  }
-
-  // Step 3: Disconnect TLS
-  TlsTransportStatus_t tls_status = xTlsDisconnect(&network_context);
-  if (tls_status != TLS_TRANSPORT_SUCCESS)
-  {
-    ESP_LOGE(TAG_AWS_IOT, "Failed to disconnect TLS cleanly: Status = %d", tls_status);
-    final_ret = ESP_FAIL;
-    // Continue cleanup anyway
+    
+    // Reset MQTT context state after disconnect
+    mqtt_context.connectStatus = MQTTNotConnected;
   }
   else
   {
-    ESP_LOGI(TAG_AWS_IOT, "TLS disconnected successfully.");
+    ESP_LOGI(TAG_AWS_IOT, "MQTT not connected, skipping disconnect.");
+  }
+
+  // Step 3: Disconnect TLS if connected
+  // Only call xTlsDisconnect if pxTls is valid
+  if (aws_iot_tls_disconnect() != ESP_OK)
+  {
+    final_ret = ESP_FAIL;
+    // Continue cleanup anyway
   }
 
   // Step 4: Delete TLS context semaphore
@@ -928,8 +1055,7 @@ static esp_err_t aws_iot_on_stop(GenericTask *self)
     mqtt_topic = NULL;
   }
 
-  // Step 7: Reset network context and shutdown flag
-  network_context.pxTls = NULL;
+  // Step 7: Reset shutdown flag
   keep_alive_should_stop = false;
 
   // Step 8: Clear statistics
@@ -957,7 +1083,7 @@ static void aws_iot_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
   switch (msg->type)
   {
     case APP_AWS_IOT_CMD_CONNECT:
-      aws_iot_connect_cmd(msg->data.broker_url);
+      aws_iot_connect_cmd(msg->data.connect_data.broker_url, msg->data.connect_data.client_identifier);
       break;
     case APP_AWS_IOT_CMD_SUBSCRIBE:
       aws_iot_subscribe_to_topic_cmd(msg->data.topic);

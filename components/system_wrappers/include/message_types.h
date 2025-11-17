@@ -14,6 +14,7 @@ extern "C"
 #define MAX_PASSPHRASE_LEN  64
 #define MAX_HOSTNAME_LEN    64
 #define MAX_URL_LEN         128
+#define MAX_CLIENT_IDENTIFIER_LEN 64
 
 static const char *NVS_SSID_KEY = "wifi_ssid";
 static const char *NVS_PASSWORD_KEY = "wifi_password";
@@ -125,6 +126,15 @@ typedef struct
   } data;
 } GpioMsg_t;
 
+/** @struct AwsIotConnectData_t
+ *  @brief Data for AWS IoT connect command
+ */
+typedef struct
+{
+  char broker_url[MAX_URL_LEN];                       /**< For APP_AWS_IOT_CMD_CONNECT */ 
+  char client_identifier[MAX_CLIENT_IDENTIFIER_LEN];  /**< For APP_AWS_IOT_CMD_CONNECT */
+} AwsIotConnectData_t;
+
 /** @struct AwsIotMsg_t
  *  @brief  Message structure for AWS IoT task messages
  */
@@ -133,8 +143,8 @@ typedef struct
   eAppMsgType_t type;
   union
   {
-    char broker_url[MAX_URL_LEN]; /**< For APP_AWS_IOT_CMD_CONNECT */
-    char topic[MAX_HOSTNAME_LEN]; /**< For APP_AWS_IOT_CMD_SUBSCRIBE */
+    AwsIotConnectData_t connect_data; /**< For APP_AWS_IOT_CMD_CONNECT */
+    char topic[MAX_HOSTNAME_LEN];     /**< For APP_AWS_IOT_CMD_SUBSCRIBE */
   } data;
 } AwsIotMsg_t;
 

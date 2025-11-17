@@ -461,6 +461,10 @@ static esp_err_t wifi_on_stop(GenericTask *self)
     ap_netif = NULL;
   }
 
+  // Step 8: Allow ESP-IDF netif registry to fully clear the interface keys
+  // This prevents "duplicate key" errors on rapid reinitializations
+  vTaskDelay(pdMS_TO_TICKS(200));
+
   // Reset state flags
   is_wifi_started = false;
   is_wifi_connected = false;

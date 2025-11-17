@@ -31,7 +31,7 @@ esp_err_t aws_iot_task_init(void);
 esp_err_t aws_iot_task_deinit(void);
 
 /** @brief Public API: Request a connection to the configured AWS IoT broker */
-void aws_iot_connect(const char* broker_url);
+void aws_iot_connect(const char* broker_url, const char* client_identifier);
 
 /** @brief Public API: Subscribe to a topic on AWS IoT */
 void aws_iot_subscribe_to_topic(const char* topic);
@@ -66,6 +66,11 @@ esp_err_t aws_iot_wait_for_connection(unsigned int timeout_ms);
  *  @return ESP_OK if listening, ESP_ERR_TIMEOUT if timeout occurred
  */
 esp_err_t aws_iot_wait_for_listening(unsigned int timeout_ms);
+
+/** @brief Public API: Get the current MQTT client identifier
+ *  @return Current MQTT client identifier string
+ */
+const char *aws_iot_get_mqtt_client_identifier(void);
 
 /** @brief Public API: Get the current MQTT broker URL
  *  @return Current MQTT broker URL string

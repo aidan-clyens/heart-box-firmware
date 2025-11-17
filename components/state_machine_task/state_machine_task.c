@@ -9,6 +9,12 @@
 
 #include "esp_log.h"
 
+// User definitions
+#ifndef MQTT_CLIENT_IDENTIFIER
+#error "MQTT_CLIENT_IDENTIFIER must be defined in sdkconfig"
+#endif // MQTT_CLIENT_IDENTIFIER
+#define MQTT_CLIENT_IDENTIFIER_LENGTH ((uint16_t)(sizeof(MQTT_CLIENT_IDENTIFIER) - 1))
+
 #ifndef MQTT_BROKER_ENDPOINT
 #error "MQTT_BROKER_ENDPOINT must be defined in sdkconfig"
 #endif // MQTT_BROKER_ENDPOINT
@@ -312,7 +318,7 @@ static void state_machine_on_message(GenericTask *self, void *msg_buf, size_t ms
     else if (event == APP_EVT_PING_SUCCESS)
     {
       ESP_LOGI(TAG, "Received Ping Success event");
-      aws_iot_connect(MQTT_BROKER_ENDPOINT);
+      aws_iot_connect(MQTT_BROKER_ENDPOINT, MQTT_CLIENT_IDENTIFIER);
     }
     else if (event == APP_EVT_PING_TIMEOUT)
     {

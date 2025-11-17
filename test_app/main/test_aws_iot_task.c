@@ -7,6 +7,11 @@
 
 #include "esp_log.h"
 
+#ifndef MQTT_CLIENT_IDENTIFIER
+#error "MQTT_CLIENT_IDENTIFIER must be defined in sdkconfig"
+#endif // MQTT_CLIENT_IDENTIFIER
+#define MQTT_CLIENT_IDENTIFIER_LENGTH ((uint16_t)(sizeof(MQTT_CLIENT_IDENTIFIER) - 1))
+
 #ifndef MQTT_BROKER_ENDPOINT
 #error "MQTT_BROKER_ENDPOINT must be defined in sdkconfig"
 #endif // MQTT_BROKER_ENDPOINT
@@ -19,13 +24,19 @@
 #define DELAY_TIME_MS 500
 #define CONNECT_TIMEOUT_MS 20 * 1000
 #define SUBSCRIBE_DELAY_MS 5 * 1000
+#define HEAP_TOLERANCE_BYTES 900 // Allow for ESP-IDF WiFi/TLS stack one-time initialization overhead
 
 static const char *TAG = "TEST_AWS_IOT_TASK";
+
+static size_t initial_free_heap_size = 0;
 
 // Test group setup
 TEST_GROUP(aws_iot_task);
 TEST_SETUP(aws_iot_task)
 {
+  initial_free_heap_size = esp_get_free_heap_size();
+  ESP_LOGI(TAG, "Initial free heap size: %u bytes", initial_free_heap_size);
+
   TEST_ASSERT_EQUAL(ESP_OK, wifi_task_init());
   TEST_ASSERT_EQUAL(ESP_OK, aws_iot_task_init());
   vTaskDelay(pdMS_TO_TICKS(DELAY_TIME_MS)); // Allow time for task to initialize
@@ -39,7 +50,24 @@ TEST_TEAR_DOWN(aws_iot_task)
 {
   TEST_ASSERT_EQUAL(ESP_OK, aws_iot_task_deinit());
   TEST_ASSERT_EQUAL(ESP_OK, wifi_task_deinit());
-  vTaskDelay(pdMS_TO_TICKS(DELAY_TIME_MS)); // Allow time for task to stop
+  vTaskDelay(pdMS_TO_TICKS(1000)); // Allow time for task to stop and cleanup to complete
+
+  // Check heap for memory leaks
+  size_t final_free_heap_size = esp_get_free_heap_size();
+  int heap_diff = final_free_heap_size - initial_free_heap_size;
+  
+  ESP_LOGI(TAG, "Heap difference: %d bytes (tolerance: ±%d)", heap_diff, HEAP_TOLERANCE_BYTES);
+
+  if (heap_diff < -HEAP_TOLERANCE_BYTES)
+  {
+    ESP_LOGE(TAG, "Memory leak detected! Lost %d bytes", -heap_diff);
+  }
+  else if (heap_diff > HEAP_TOLERANCE_BYTES)
+  {
+    ESP_LOGW(TAG, "Heap grew unexpectedly by %d bytes", heap_diff);
+  }
+
+  TEST_ASSERT_GREATER_OR_EQUAL_INT(-HEAP_TOLERANCE_BYTES, heap_diff);
 }
 
 /** @brief Test: Initial state of AWS IoT task
@@ -59,11 +87,11 @@ TEST(aws_iot_task, initial_state)
 /** @brief Test: Connect to AWS IoT broker with invalid URL
  *  @test Expected: Connection fails and appropriate state is maintained
  */
-TEST(aws_iot_task, connect_to_broker_invalid_url)
+TEST(aws_iot_task, connect_to_broker_failed)
 {
-  ESP_LOGI(TAG, "Starting test: connect_to_broker_invalid_url");
+  ESP_LOGI(TAG, "Starting test: connect_to_broker_failed");
 
-  aws_iot_connect("https://invalid-url");
+  aws_iot_connect("https://invalid-url", MQTT_CLIENT_IDENTIFIER);
   TEST_ASSERT_EQUAL(ESP_ERR_TIMEOUT, aws_iot_wait_for_connection(CONNECT_TIMEOUT_MS));
 
   TEST_ASSERT_FALSE(aws_iot_is_connected());
@@ -71,6 +99,8 @@ TEST(aws_iot_task, connect_to_broker_invalid_url)
 
   TEST_ASSERT_EQUAL_STRING("", aws_iot_get_mqtt_broker_url());
   TEST_ASSERT_EQUAL_STRING("", aws_iot_get_mqtt_topic());
+
+  // TODO - Verify cleanup of network context
 }
 
 /** @brief Test: Connect to AWS IoT broker
@@ -80,7 +110,7 @@ TEST(aws_iot_task, connect_to_broker)
 {
   ESP_LOGI(TAG, "Starting test: connect_to_broker");
 
-  aws_iot_connect(MQTT_BROKER_ENDPOINT);
+  aws_iot_connect(MQTT_BROKER_ENDPOINT, MQTT_CLIENT_IDENTIFIER);
   TEST_ASSERT_EQUAL(ESP_OK, aws_iot_wait_for_connection(CONNECT_TIMEOUT_MS));
   ESP_LOGI(TAG, "AWS IoT connected");
 
@@ -98,7 +128,7 @@ TEST(aws_iot_task, subscribe_to_topic)
 {
   ESP_LOGI(TAG, "Starting test: subscribe_to_topic");
 
-  aws_iot_connect(MQTT_BROKER_ENDPOINT);
+  aws_iot_connect(MQTT_BROKER_ENDPOINT, MQTT_CLIENT_IDENTIFIER);
   TEST_ASSERT_EQUAL(ESP_OK, aws_iot_wait_for_connection(CONNECT_TIMEOUT_MS));
   ESP_LOGI(TAG, "AWS IoT connected");
 
@@ -122,7 +152,7 @@ TEST(aws_iot_task, start_listening_for_messages)
 {
   ESP_LOGI(TAG, "Starting test: start_listening_for_messages");
 
-  aws_iot_connect(MQTT_BROKER_ENDPOINT);
+  aws_iot_connect(MQTT_BROKER_ENDPOINT, MQTT_CLIENT_IDENTIFIER);
   TEST_ASSERT_EQUAL(ESP_OK, aws_iot_wait_for_connection(CONNECT_TIMEOUT_MS));
   ESP_LOGI(TAG, "AWS IoT connected");
 
@@ -158,7 +188,7 @@ TEST(aws_iot_task, publish_button_events)
 {
   ESP_LOGI(TAG, "Starting test: publish_button_events");
 
-  aws_iot_connect(MQTT_BROKER_ENDPOINT);
+  aws_iot_connect(MQTT_BROKER_ENDPOINT, MQTT_CLIENT_IDENTIFIER);
   TEST_ASSERT_EQUAL(ESP_OK, aws_iot_wait_for_connection(CONNECT_TIMEOUT_MS));
   ESP_LOGI(TAG, "AWS IoT connected");
 

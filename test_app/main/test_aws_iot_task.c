@@ -42,19 +42,16 @@ TEST_SETUP(aws_iot_task)
   initial_free_heap_size = esp_get_free_heap_size();
   ESP_LOGI(TAG, "Initial free heap size: %u bytes", initial_free_heap_size);
 
-  TEST_ASSERT_EQUAL(ESP_OK, wifi_task_init());
-  TEST_ASSERT_EQUAL(ESP_OK, aws_iot_task_init());
+  TEST_ASSERT_EQUAL(ESP_OK, application_init());
   vTaskDelay(pdMS_TO_TICKS(DELAY_TIME_MS)); // Allow time for task to initialize
 
   wifi_set_sta_credentials(TEST_WIFI_SSID, TEST_WIFI_PASSWORD);
-
   TEST_ASSERT_EQUAL(ESP_OK, wifi_wait_for_connection(CONNECT_TIMEOUT_MS));
 }
 
 TEST_TEAR_DOWN(aws_iot_task)
 {
-  TEST_ASSERT_EQUAL(ESP_OK, aws_iot_task_deinit());
-  TEST_ASSERT_EQUAL(ESP_OK, wifi_task_deinit());
+  TEST_ASSERT_EQUAL(ESP_OK, application_deinit());
   vTaskDelay(pdMS_TO_TICKS(1000)); // Allow time for task to stop and cleanup to complete
 
   // Check heap for memory leaks

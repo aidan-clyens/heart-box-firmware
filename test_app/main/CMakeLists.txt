@@ -1,4 +1,5 @@
 idf_component_register(SRCS
+                        "test_application.c"
                         "test_app_main.c"
                         "test_aws_iot_task.c"
                         "test_generic_task.c"
@@ -7,6 +8,7 @@ idf_component_register(SRCS
                         "test_wifi_task.c"
                         "test_gpio_task.c"
                        INCLUDE_DIRS ""
+                       INCLUDE_DIRS "../../include"
                        REQUIRES
                             unity
                             state_machine_task

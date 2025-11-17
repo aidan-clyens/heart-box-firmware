@@ -8,6 +8,10 @@ static const char *TAG = "FILE SYSTEM";
 
 static const char *NVS_NAMESPACE = "storage";
 
+/** @brief Helper function to open NVS handle
+ *  @param handle Pointer to nvs_handle_t to be opened
+ *  @param mode NVS open mode (read-only or read-write)
+*/
 static void file_system_open_handle(nvs_handle_t *handle, nvs_open_mode_t mode)
 {
   esp_err_t err = nvs_open(NVS_NAMESPACE, mode, handle);
@@ -17,7 +21,10 @@ static void file_system_open_handle(nvs_handle_t *handle, nvs_open_mode_t mode)
   }
 }
 
-void file_system_init(void)
+/** @brief Public API: Initialize the file system (NVS) 
+ *  @return ESP_OK on success, error code otherwise
+ */
+esp_err_t file_system_init(void)
 {
   ESP_LOGI(TAG, "Initializing NVS");
 
@@ -36,6 +43,8 @@ void file_system_init(void)
   {
     ESP_LOGE(TAG, "Failed to initialize NVS: %s", esp_err_to_name(ret));
   }
+
+  return ret;
 }
 
 void file_system_write_string(const char *key, const char *data)

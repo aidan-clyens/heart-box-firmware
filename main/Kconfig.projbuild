@@ -2,31 +2,31 @@ menu "HeartBox Configuration"
 
     config HEARTBOX_DEVICE_NAME
         string "Device Name"
-        default ""
+        default "Heart_Box_1"
         help
             The name of the device. Used to identify the device in AWS IoT and to locate certificate files.
 
     config HEARTBOX_TOPIC_NAME
         string "MQTT Topic Name"
-        default ""
+        default "heartbox/1"
         help
             The MQTT topic name used for publishing and subscribing.
 
     config HEARTBOX_AWS_IOT_ENDPOINT
         string "AWS IoT Endpoint"
-        default ""
+        default "airgahux2exxu-ats.iot.us-east-1.amazonaws.com"
         help
             The AWS IoT endpoint URL for this device to connect to.
 
     config HEARTBOX_TEST_WIFI_SSID
         string "Test WiFi SSID"
-        default ""
+        default "OctopusChurch"
         help
             WiFi SSID to use for testing.
 
     config HEARTBOX_TEST_WIFI_PASSWORD
         string "Test WiFi Password"
-        default ""
+        default "BishopNemo"
         help
             WiFi password to use for testing.
 

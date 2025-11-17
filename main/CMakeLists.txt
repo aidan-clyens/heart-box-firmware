@@ -1,4 +1,5 @@
 set(COMPONENT_SRCS
+  "application.c"
   "main.c"
 )
 

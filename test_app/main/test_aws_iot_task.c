@@ -450,13 +450,13 @@ TEST(aws_iot_task, profile_message_round_trip)
 
 TEST_GROUP_RUNNER(aws_iot_task)
 {
-  // RUN_TEST_CASE(aws_iot_task, initial_state);
-  // RUN_TEST_CASE(aws_iot_task, connect_to_broker_failed_invalid_broker);
-  // RUN_TEST_CASE(aws_iot_task, connect_to_broker_failed_invalid_client_id);
-  // RUN_TEST_CASE(aws_iot_task, connect_to_broker);
-  // RUN_TEST_CASE(aws_iot_task, subscribe_to_topic_failed);
-  // RUN_TEST_CASE(aws_iot_task, subscribe_to_topic);
-  // RUN_TEST_CASE(aws_iot_task, start_listening_for_messages);
-  // RUN_TEST_CASE(aws_iot_task, publish_button_events);
+  RUN_TEST_CASE(aws_iot_task, initial_state);
+  RUN_TEST_CASE(aws_iot_task, connect_to_broker_failed_invalid_broker);
+  RUN_TEST_CASE(aws_iot_task, connect_to_broker_failed_invalid_client_id);
+  RUN_TEST_CASE(aws_iot_task, connect_to_broker);
+  RUN_TEST_CASE(aws_iot_task, subscribe_to_topic_failed);
+  RUN_TEST_CASE(aws_iot_task, subscribe_to_topic);
+  RUN_TEST_CASE(aws_iot_task, start_listening_for_messages);
+  RUN_TEST_CASE(aws_iot_task, publish_button_events);
   RUN_TEST_CASE(aws_iot_task, profile_message_round_trip);
 }

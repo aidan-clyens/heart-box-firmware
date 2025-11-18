@@ -39,6 +39,7 @@
 
 #define MQTT_SUBACK_RECEIVED_BIT (1 << 0)
 #define MQTT_SUBACK_SUCCESS_BIT (1 << 1)
+#define MQTT_PUBACK_RECEIVED_BIT (1 << 2)
 
 extern const char root_cert_auth_start[] asm("_binary_AmazonRootCA1_pem_start");
 extern const char root_cert_auth_end[] asm("_binary_AmazonRootCA1_pem_end");
@@ -75,6 +76,9 @@ static MQTTSubscribeInfo_t subscription_list[1];
 static unsigned short subscribe_packet_identifier = 0U;
 static char *mqtt_topic = NULL;
 
+// MQTT publish tracking
+static uint16_t expected_puback_packet_id = 0;
+
 // MQTT message queues
 static MQTTPubAckInfo_t outgoing_publish_records[MQTT_OUTGOING_PUBLISH_RECORD_LEN];
 static MQTTPubAckInfo_t incoming_publish_records[MQTT_INCOMING_PUBLISH_RECORD_LEN];
@@ -82,6 +86,7 @@ static MQTTPubAckInfo_t incoming_publish_records[MQTT_INCOMING_PUBLISH_RECORD_LE
 // Events handling
 static bool session_present = false;
 static EventGroupHandle_t mqtt_event_group = NULL;
+static SemaphoreHandle_t mqtt_process_mutex = NULL;
 
 static TaskHandle_t keep_alive_task_handle = NULL;
 static volatile bool keep_alive_should_stop = false;
@@ -298,7 +303,9 @@ static void aws_iot_keep_alive_task()
 
   while (!keep_alive_should_stop)
   {
+    xSemaphoreTake(mqtt_process_mutex, portMAX_DELAY);
     MQTTStatus_t mqtt_status = MQTT_ProcessLoop(&mqtt_context);
+    xSemaphoreGive(mqtt_process_mutex);
 
     if (mqtt_status != MQTTSuccess && mqtt_status != MQTTNeedMoreBytes)
     {
@@ -484,7 +491,9 @@ static void aws_iot_subscribe_to_topic_cmd(const char* topic)
     }
 
     // Process MQTT events to receive SUBACK
+    xSemaphoreTake(mqtt_process_mutex, portMAX_DELAY);
     mqtt_status = MQTT_ProcessLoop(&mqtt_context);
+    xSemaphoreGive(mqtt_process_mutex);
 
     if (mqtt_status != MQTTSuccess && mqtt_status != MQTTNeedMoreBytes)
     {
@@ -678,6 +687,7 @@ static void aws_iot_publish_button_event_cmd(const char* state)
   if (mqtt_status != MQTTSuccess)
   {
     ESP_LOGE(TAG_AWS_IOT, "Failed to publish button event: %s", MQTT_Status_strerror(mqtt_status));
+    free((void *)payload);
     return;
   }
 
@@ -690,7 +700,44 @@ static void aws_iot_publish_button_event_cmd(const char* state)
              aws_iot_profiling_data.publish_timestamp_ms, packet_id);
   }
 
-  // TODO - Wait for PUBACK
+  // Wait for PUBACK (QoS 1 requires acknowledgment)
+  expected_puback_packet_id = packet_id;
+  xEventGroupClearBits(mqtt_event_group, MQTT_PUBACK_RECEIVED_BIT);
+
+  const TickType_t start_time = xTaskGetTickCount();
+  const TickType_t timeout_ticks = pdMS_TO_TICKS(MQTT_PROCESS_LOOP_TIMEOUT_MS);
+  EventBits_t bits = 0;
+
+  while ((xTaskGetTickCount() - start_time) < timeout_ticks)
+  {
+    // Check if PUBACK has already been received
+    bits = xEventGroupGetBits(mqtt_event_group);
+    if (bits & MQTT_PUBACK_RECEIVED_BIT)
+    {
+      break;
+    }
+
+    // Process MQTT events to receive PUBACK
+    xSemaphoreTake(mqtt_process_mutex, portMAX_DELAY);
+    mqtt_status = MQTT_ProcessLoop(&mqtt_context);
+    xSemaphoreGive(mqtt_process_mutex);
+    if (mqtt_status != MQTTSuccess && mqtt_status != MQTTNeedMoreBytes)
+    {
+      ESP_LOGE(TAG_AWS_IOT, "MQTT_ProcessLoop failed while waiting for PUBACK: %s",
+               MQTT_Status_strerror(mqtt_status));
+      break;
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(10));  // Small delay to avoid tight loop
+  }
+
+  xEventGroupClearBits(mqtt_event_group, MQTT_PUBACK_RECEIVED_BIT);
+  expected_puback_packet_id = 0;
+
+  if (!(bits & MQTT_PUBACK_RECEIVED_BIT))
+  {
+    ESP_LOGW(TAG_AWS_IOT, "Timeout waiting for PUBACK (Packet ID: %u)", packet_id);
+  }
 
   ESP_LOGI(TAG_AWS_IOT, "Published button event to topic %s: %s", topic, payload);
 
@@ -716,8 +763,6 @@ static void aws_iot_handle_publish_packet(MQTTPublishInfo_t * p_publish_info, un
     ESP_LOGI(TAG_AWS_IOT, "[PROFILING] Message received at %lu ms (Packet ID: %u)",
              aws_iot_profiling_data.receive_timestamp_ms, packet_id);
   }
-
-  // TODO - Acknowledge the PUBLISH if QoS 1
 
   // Parse JSON payload
   cJSON *json = cJSON_ParseWithLength(p_publish_info->pPayload, p_publish_info->payloadLength);
@@ -849,7 +894,11 @@ static void aws_iot_event_callback(MQTTContext_t * p_mqtt_context,
           ESP_LOGI(TAG_AWS_IOT, "[PROFILING] PUBACK received at %lu ms (Packet ID: %u)",
                    aws_iot_profiling_data.puback_timestamp_ms, packet_id);
         }
-        // TODO - Handle PUBACK
+        // Signal PUBACK received if we're waiting for this packet ID
+        if (expected_puback_packet_id == packet_id)
+        {
+          xEventGroupSetBits(mqtt_event_group, MQTT_PUBACK_RECEIVED_BIT);
+        }
         break;
 
       case MQTT_PACKET_TYPE_PINGRESP:
@@ -887,6 +936,16 @@ static esp_err_t aws_iot_on_init(GenericTask *self)
   if (mqtt_event_group == NULL)
   {
     ESP_LOGE(TAG_AWS_IOT, "Failed to create MQTT event group");
+    return ESP_ERR_NO_MEM;
+  }
+
+  // Step 2: Create MQTT process mutex
+  mqtt_process_mutex = xSemaphoreCreateMutex();
+  if (mqtt_process_mutex == NULL)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Failed to create MQTT process mutex");
+    vEventGroupDelete(mqtt_event_group);
+    mqtt_event_group = NULL;
     return ESP_ERR_NO_MEM;
   }
 
@@ -1092,7 +1151,16 @@ static esp_err_t aws_iot_on_stop(GenericTask *self)
     ESP_LOGI(TAG_AWS_IOT, "MQTT event group deleted.");
   }
 
-  // Step 6: Free allocated strings
+  // Step 6: Delete MQTT process mutex
+  if (mqtt_process_mutex != NULL)
+  {
+    vSemaphoreDelete(mqtt_process_mutex);
+    mqtt_process_mutex = NULL;
+
+    ESP_LOGI(TAG_AWS_IOT, "MQTT process mutex deleted.");
+  }
+
+  // Step 7: Free allocated strings
   if (mqtt_broker_url != NULL)
   {
     free(mqtt_broker_url);
@@ -1105,13 +1173,13 @@ static esp_err_t aws_iot_on_stop(GenericTask *self)
     mqtt_topic = NULL;
   }
 
-  // Step 7: Reset shutdown flag
+  // Step 8: Reset shutdown flag
   keep_alive_should_stop = false;
 
-  // Step 8: Clear statistics
+  // Step 9: Clear statistics
   (void)memset(&aws_iot_statistics, 0, sizeof(aws_iot_statistics));
 
-  // Step 9: Clear profiling data
+  // Step 10: Clear profiling data
   (void)memset(&aws_iot_profiling_data, 0, sizeof(aws_iot_profiling_data));
 
   ESP_LOGI(TAG_AWS_IOT, "AWS IoT Task stopped.");

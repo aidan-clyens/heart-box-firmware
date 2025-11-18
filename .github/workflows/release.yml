@@ -1,0 +1,186 @@
+name: Create Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., v1.0.0)'
+        required: true
+        type: string
+
+jobs:
+  # First, ensure the build workflow passes
+  verify-build:
+    uses: ./.github/workflows/build_esp_idf.yml
+
+  # Create release after build verification
+  release:
+    needs: verify-build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+
+      - name: Initialize and update submodules
+        run: git submodule update --init --recursive
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache ESP-IDF
+        id: cache-esp-idf
+        uses: actions/cache@v4
+        with:
+          path: ~/esp-idf
+          key: ${{ runner.os }}-esp-idf-v5.5.1
+
+      - name: Download and install ESP-IDF v5.5.1
+        if: steps.cache-esp-idf.outputs.cache-hit != 'true'
+        run: |
+          cd ~
+          git clone --recursive --depth 1 --branch v5.5.1 https://github.com/espressif/esp-idf.git
+          cd esp-idf
+          ./install.sh esp32
+
+      - name: Install ESP-IDF v5.5.1
+        if: steps.cache-esp-idf.outputs.cache-hit == 'true'
+        run: |
+          cd ~/esp-idf
+          ./install.sh esp32
+
+      - name: Source ESP-IDF environment
+        run: |
+          . ~/esp-idf/export.sh
+          echo "IDF_PATH=$IDF_PATH" >> $GITHUB_ENV
+          echo "$HOME/.espressif/tools" >> $GITHUB_PATH
+          echo "$IDF_PATH/tools" >> $GITHUB_PATH
+
+      - name: Configure release build
+        run: |
+          . ~/esp-idf/export.sh
+          idf.py reconfigure
+
+      - name: Build release firmware
+        run: |
+          . ~/esp-idf/export.sh
+          idf.py build
+
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create release package
+        run: |
+          mkdir -p release
+          cp build/HeartBoxFirmware.bin release/
+          cp build/bootloader/bootloader.bin release/
+          cp build/partition_table/partition-table.bin release/
+          cp build/flash_project_args release/flash_args.txt
+          
+          # Create a flash script for easy deployment
+          cat > release/flash.sh << 'EOF'
+          #!/bin/bash
+          PORT=${1:-/dev/ttyUSB0}
+          esptool.py --chip esp32 --port $PORT --baud 460800 \
+            --before default_reset --after hard_reset write_flash \
+            0x1000 bootloader.bin \
+            0x8000 partition-table.bin \
+            0x10000 HeartBoxFirmware.bin
+          EOF
+          chmod +x release/flash.sh
+          
+          # Create a Windows flash script
+          cat > release/flash.bat << 'EOF'
+          @echo off
+          set PORT=%1
+          if "%PORT%"=="" set PORT=COM4
+          esptool.py --chip esp32 --port %PORT% --baud 460800 ^
+            --before default_reset --after hard_reset write_flash ^
+            0x1000 bootloader.bin ^
+            0x8000 partition-table.bin ^
+            0x10000 HeartBoxFirmware.bin
+          EOF
+          
+          # Create README
+          cat > release/README.md << 'EOF'
+          # HeartBox Firmware Release
+          
+          ## Files Included
+          - `HeartBoxFirmware.bin` - Main application firmware
+          - `bootloader.bin` - ESP32 bootloader
+          - `partition-table.bin` - Partition table
+          - `flash.sh` - Linux/Mac flash script
+          - `flash.bat` - Windows flash script
+          - `flash_args.txt` - Flash arguments for reference
+          
+          ## Flashing Instructions
+          
+          ### Prerequisites
+          Install esptool: `pip install esptool`
+          
+          ### Linux/Mac
+          ```bash
+          ./flash.sh /dev/ttyUSB0
+          ```
+          
+          ### Windows
+          ```cmd
+          flash.bat COM4
+          ```
+          
+          Replace the port with your ESP32's serial port.
+          EOF
+          
+          # Create tarball
+          cd release
+          tar -czf ../HeartBoxFirmware-${{ steps.version.outputs.version }}.tar.gz *
+          cd ..
+          
+          # Create zip for Windows users
+          cd release
+          zip -r ../HeartBoxFirmware-${{ steps.version.outputs.version }}.zip *
+          cd ..
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          if [ -f CHANGELOG.md ]; then
+            # Extract changelog for this version if it exists
+            echo "changelog<<EOF" >> $GITHUB_OUTPUT
+            cat CHANGELOG.md >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          else
+            echo "changelog=Release ${{ steps.version.outputs.version }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.version }}
+          name: HeartBox Firmware ${{ steps.version.outputs.version }}
+          body: ${{ steps.changelog.outputs.changelog }}
+          draft: false
+          prerelease: false
+          files: |
+            HeartBoxFirmware-${{ steps.version.outputs.version }}.tar.gz
+            HeartBoxFirmware-${{ steps.version.outputs.version }}.zip
+            release/HeartBoxFirmware.bin
+            release/bootloader.bin
+            release/partition-table.bin
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

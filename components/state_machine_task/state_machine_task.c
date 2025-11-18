@@ -379,12 +379,11 @@ static void state_machine_on_message(GenericTask *self, void *msg_buf, size_t ms
     {
       ESP_LOGI(TAG, "Message received from AWS IoT in STATE_AWS_IOT_CONNECTED");
       gpio_set_state(HEART_LED_ARRAY_PIN, GPIO_STATE_LED_SOLID);
-      vTaskDelay(pdMS_TO_TICKS(1000));
-      gpio_set_state(HEART_LED_ARRAY_PIN, GPIO_STATE_LED_OFF);
     }
     else if (event == APP_AWS_IOT_EVT_MSG_RELEASED)
     {
       ESP_LOGI(TAG, "Message released from AWS IoT in STATE_AWS_IOT_CONNECTED");
+      gpio_set_state(HEART_LED_ARRAY_PIN, GPIO_STATE_LED_OFF);
     }
     else
     {

@@ -48,8 +48,7 @@ typedef enum
   APP_AWS_IOT_CMD_CONNECT,
   APP_AWS_IOT_CMD_SUBSCRIBE,
   APP_AWS_IOT_CMD_START_LISTENING,
-  APP_AWS_IOT_CMD_PUBLISH_BUTTON_PRESSED,
-  APP_AWS_IOT_CMD_PUBLISH_BUTTON_RELEASED,
+  APP_AWS_IOT_CMD_PUBLISH_BUTTON_EVENT,
 
   // -- AWS IoT Events -- //
   APP_AWS_IOT_EVT_CONNECTED,
@@ -126,6 +125,15 @@ typedef struct
   } data;
 } GpioMsg_t;
 
+/** @struct AwsIotButtonEventData_t
+ *  @brief Data for AWS IoT button event messages
+ */
+typedef struct {
+  unsigned int duration_ms;
+  char client_identifier[MAX_CLIENT_IDENTIFIER_LEN];
+  char button_state[16];
+} AwsIotButtonEventData_t;
+
 /** @struct AwsIotConnectData_t
  *  @brief Data for AWS IoT connect command
  */
@@ -143,8 +151,9 @@ typedef struct
   eAppMsgType_t type;
   union
   {
-    AwsIotConnectData_t connect_data; /**< For APP_AWS_IOT_CMD_CONNECT */
-    char topic[MAX_HOSTNAME_LEN];     /**< For APP_AWS_IOT_CMD_SUBSCRIBE */
+    AwsIotConnectData_t connect_data;     /**< For APP_AWS_IOT_CMD_CONNECT */
+    AwsIotButtonEventData_t button_event; /**< For APP_AWS_IOT_CMD_PUBLISH_BUTTON_EVENT */
+    char topic[MAX_HOSTNAME_LEN];         /**< For APP_AWS_IOT_CMD_SUBSCRIBE */
   } data;
 } AwsIotMsg_t;
 

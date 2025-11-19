@@ -57,6 +57,7 @@ static GenericTask *aws_iot_task = NULL;
 
 static const char *MSG_CLIENT_TAG = "client";
 static const char *MSG_BUTTON_TAG = "button";
+static const char *MSG_DURATION_MS_TAG = "duration_ms";
 static const char *MSG_BUTTON_PRESSED = "pressed";
 static const char *MSG_BUTTON_RELEASED = "released";
 
@@ -151,19 +152,16 @@ void aws_iot_start_listening(void)
   aws_iot_post_msg(msg);
 }
 
-/** @brief Public API: Publish a button press event to AWS IoT */
-void aws_iot_publish_button_pressed_event(void)
+/** @brief Public API: Publish a button event to AWS IoT */
+void aws_iot_publish_button_event(const char* button_state, unsigned int duration_ms)
 {
-  AwsIotMsg_t msg;
-  msg.type = APP_AWS_IOT_CMD_PUBLISH_BUTTON_PRESSED;
-  aws_iot_post_msg(msg);
-}
+  AwsIotButtonEventData_t button_event;
+  strncpy(button_event.button_state, button_state, 16);
+  button_event.duration_ms = duration_ms;
 
-/** @brief Public API: Publish a button released event to AWS IoT */
-void aws_iot_publish_button_released_event(void)
-{
   AwsIotMsg_t msg;
-  msg.type = APP_AWS_IOT_CMD_PUBLISH_BUTTON_RELEASED;
+  msg.type = APP_AWS_IOT_CMD_PUBLISH_BUTTON_EVENT;
+  msg.data.button_event = button_event;
   aws_iot_post_msg(msg);
 }
 
@@ -614,8 +612,54 @@ static void aws_iot_start_listening_cmd()
   xTaskCreate(aws_iot_keep_alive_task, TAG_AWS_IOT_KEEP_ALIVE, MQTT_KEEP_ALIVE_TASK_STACK_SIZE, NULL, 5, &keep_alive_task_handle);
 }
 
-/** @brief Handle the AWS IoT publish button event command */
-static void aws_iot_publish_button_event_cmd(const char* state)
+/** @brief Create a JSON payload for the button event
+ *  @param state The button state string ("pressed" or "released")
+ *  @return Pointer to the JSON payload string
+ */
+static const char *aws_iot_create_payload(const char *state, unsigned int duration_ms)
+{
+  // Prepare the MQTT PUBLISH message
+  cJSON *json = cJSON_CreateObject();
+  if (json == NULL)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Failed to create JSON payload for button event");
+    return NULL;
+  }
+
+  // Verify the client identifier is set
+  if (mqtt_client_identifier == NULL || mqtt_client_identifier[0] == '\0')
+  {
+    ESP_LOGE(TAG_AWS_IOT, "MQTT client identifier is not set, cannot publish button event.");
+    cJSON_Delete(json);
+    return NULL;
+  }
+
+  // Add fields to JSON object
+  if (cJSON_AddStringToObject(json, MSG_CLIENT_TAG, mqtt_client_identifier) == NULL ||
+      cJSON_AddStringToObject(json, MSG_BUTTON_TAG, state) == NULL ||
+      cJSON_AddNumberToObject(json, MSG_DURATION_MS_TAG, duration_ms) == NULL)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Failed to create JSON payload for button event");
+    cJSON_Delete(json);
+    return NULL;
+  }
+
+  const char *payload = cJSON_PrintUnformatted(json);
+  if (payload == NULL)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Failed to serialize JSON payload for button event");
+    cJSON_Delete(json);
+    return NULL;
+  }
+
+  cJSON_Delete(json);
+  return payload;
+}
+
+/** @brief Handle the AWS IoT publish button event command
+ *  @param state The button state string ("pressed" or "released")
+ */
+static void aws_iot_publish_button_event_cmd(const char* state, unsigned int duration_ms)
 {
   // Check if MQTT is connected
   if (mqtt_context.connectStatus != MQTTConnected)
@@ -624,45 +668,12 @@ static void aws_iot_publish_button_event_cmd(const char* state)
     return;
   }
 
-  // Prepare the MQTT PUBLISH message
-  cJSON *json = cJSON_CreateObject();
-  if (json == NULL)
-  {
-    ESP_LOGE(TAG_AWS_IOT, "Failed to create JSON payload for button event");
-    return;
-  }
-
-  // Verify the client identifier is set
-  if (mqtt_client_identifier == NULL || mqtt_client_identifier[0] == '\0')
-  {
-    ESP_LOGE(TAG_AWS_IOT, "MQTT client identifier is not set, cannot publish button event.");
-    cJSON_Delete(json);
-    return;
-  }
-
-  if (cJSON_AddStringToObject(json, MSG_CLIENT_TAG, mqtt_client_identifier) == NULL)
-  {
-    ESP_LOGE(TAG_AWS_IOT, "Failed to create JSON payload for button event");
-    cJSON_Delete(json);
-    return;
-  }
-
-  if (cJSON_AddStringToObject(json, MSG_BUTTON_TAG, state) == NULL)
-  {
-    ESP_LOGE(TAG_AWS_IOT, "Failed to create JSON payload for button event");
-    cJSON_Delete(json);
-    return;
-  }
-
-  const char *payload = cJSON_PrintUnformatted(json);
+  const char *payload = aws_iot_create_payload(state, 0);
   if (payload == NULL)
   {
-    ESP_LOGE(TAG_AWS_IOT, "Failed to serialize JSON payload for button event");
-    cJSON_Delete(json);
+    ESP_LOGE(TAG_AWS_IOT, "Failed to create payload for button event");
     return;
   }
-
-  cJSON_Delete(json);
 
   MQTTPublishInfo_t publish_info = {0};
 
@@ -1212,11 +1223,8 @@ static void aws_iot_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
     case APP_AWS_IOT_CMD_START_LISTENING:
       aws_iot_start_listening_cmd();
       break;
-    case APP_AWS_IOT_CMD_PUBLISH_BUTTON_PRESSED:
-      aws_iot_publish_button_event_cmd(MSG_BUTTON_PRESSED);
-      break;
-    case APP_AWS_IOT_CMD_PUBLISH_BUTTON_RELEASED:
-      aws_iot_publish_button_event_cmd(MSG_BUTTON_RELEASED);
+    case APP_AWS_IOT_CMD_PUBLISH_BUTTON_EVENT:
+      aws_iot_publish_button_event_cmd(msg->data.button_event.button_state, msg->data.button_event.duration_ms);
       break;
     default:
       break;

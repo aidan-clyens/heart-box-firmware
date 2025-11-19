@@ -42,20 +42,22 @@ esp_err_t aws_iot_task_init(void);
  */
 esp_err_t aws_iot_task_deinit(void);
 
-/** @brief Public API: Request a connection to the configured AWS IoT broker */
+/** @brief Public API: Request a connection to the configured AWS IoT broker 
+ *  @param broker_url The AWS IoT broker URL
+ *  @param client_identifier The MQTT client identifier
+ */
 void aws_iot_connect(const char* broker_url, const char* client_identifier);
 
-/** @brief Public API: Subscribe to a topic on AWS IoT */
+/** @brief Public API: Subscribe to a topic on AWS IoT
+ *  @param topic The topic to subscribe to
+ */
 void aws_iot_subscribe_to_topic(const char* topic);
 
 /** @brief Public API: Start listening for incoming MQTT messages from AWS IoT */
 void aws_iot_start_listening(void);
 
-/** @brief Public API: Publish a button press event to AWS IoT */
-void aws_iot_publish_button_pressed_event(void);
-
-/** @brief Public API: Publish a button released event to AWS IoT */
-void aws_iot_publish_button_released_event(void);
+/** @brief Public API: Publish a button event to AWS IoT */
+void aws_iot_publish_button_event(const char* button_state, unsigned int duration_ms);
 
 /** @brief Public API: Get the current MQTT connection status
  *  @return Current MQTT connection status

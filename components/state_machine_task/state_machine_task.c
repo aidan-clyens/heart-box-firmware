@@ -54,6 +54,27 @@ BaseType_t state_machine_post_event(eAppMsgType_t type, eAppMsgSource_t source)
   return generic_task_post_msg(sm_task, &app_msg, sizeof(AppMsg_t));
 }
 
+/** @brief Public API: Post an event message to the State Machine task
+ *  @param app_msg Pointer to the AppMsg_t to post
+ *  @return pdTRUE if the item was successfully posted, otherwise errQUEUE_FULL
+ */
+BaseType_t state_machine_post_event_msg(AppMsg_t *app_msg)
+{
+  if (sm_task == NULL)
+  {
+    ESP_LOGE(TAG, "State machine task not initialized");
+    return pdFALSE;
+  }
+
+  if (app_msg == NULL)
+  {
+    ESP_LOGE(TAG, "Invalid app_msg pointer");
+    return pdFALSE;
+  }
+
+  return generic_task_post_msg(sm_task, app_msg, sizeof(AppMsg_t));
+}
+
 /** @brief Get the current application state
  *  @return Current application state
  */
@@ -111,8 +132,6 @@ static const char *state_machine_event_to_string(eAppMsgType_t msg_type)
       return "AWS_IOT_EVT_DISCONNECTED";
     case APP_AWS_IOT_EVT_MSG_PRESSED:
       return "AWS_IOT_EVT_MSG_PRESSED";
-    case APP_AWS_IOT_EVT_MSG_RELEASED:
-      return "AWS_IOT_EVT_MSG_RELEASED";
     case APP_MSG_NONE:
     default:
       return "MSG_NONE";
@@ -367,23 +386,13 @@ static void state_machine_on_message(GenericTask *self, void *msg_buf, size_t ms
     {
       ESP_LOGI(TAG, "Button pressed event received in STATE_AWS_IOT_CONNECTED");
       // Publish a message to AWS IoT when the button is pressed
-      aws_iot_publish_button_event("pressed", 0);
-    }
-    else if (event == APP_GPIO_EVT_BUTTON_RELEASED)
-    {
-      ESP_LOGI(TAG, "Button released event received in STATE_AWS_IOT_CONNECTED");
-      // Publish a message to AWS IoT when the button is released
-      aws_iot_publish_button_event("released", 0);
+      GpioMsg_t *gpio_msg = &app_msg->data.gpio;
+      aws_iot_publish_button_event(gpio_msg->data.button_event.duration_ms);
     }
     else if (event == APP_AWS_IOT_EVT_MSG_PRESSED)
     {
       ESP_LOGI(TAG, "Message received from AWS IoT in STATE_AWS_IOT_CONNECTED");
       gpio_set_state(HEART_LED_ARRAY_PIN, GPIO_STATE_LED_SOLID);
-    }
-    else if (event == APP_AWS_IOT_EVT_MSG_RELEASED)
-    {
-      ESP_LOGI(TAG, "Message released from AWS IoT in STATE_AWS_IOT_CONNECTED");
-      gpio_set_state(HEART_LED_ARRAY_PIN, GPIO_STATE_LED_OFF);
     }
     else
     {

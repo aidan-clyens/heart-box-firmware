@@ -73,6 +73,12 @@ esp_err_t state_machine_task_deinit(void);
  */
 BaseType_t state_machine_post_event(eAppMsgType_t type, eAppMsgSource_t source);
 
+/** @brief Public API: Post an event message to the State Machine task
+ *  @param app_msg Pointer to the AppMsg_t to post
+ *  @return pdTRUE if the item was successfully posted, otherwise errQUEUE_FULL
+ */
+BaseType_t state_machine_post_event_msg(AppMsg_t *app_msg);
+
 /** @brief Get the current application state
  *  @return Current application state
  */

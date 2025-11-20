@@ -57,7 +57,7 @@ void aws_iot_subscribe_to_topic(const char* topic);
 void aws_iot_start_listening(void);
 
 /** @brief Public API: Publish a button event to AWS IoT */
-void aws_iot_publish_button_event(const char* button_state, unsigned int duration_ms);
+void aws_iot_publish_button_event(unsigned int duration_ms);
 
 /** @brief Public API: Get the current MQTT connection status
  *  @return Current MQTT connection status

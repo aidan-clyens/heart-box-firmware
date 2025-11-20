@@ -55,7 +55,6 @@ typedef enum
   APP_AWS_IOT_EVT_DISCONNECTED,
   APP_AWS_IOT_EVT_SUBSCRIBED,
   APP_AWS_IOT_EVT_MSG_PRESSED,
-  APP_AWS_IOT_EVT_MSG_RELEASED,
 
   APP_MSG_NONE = -1 /**< Generic "no message" marker */
 } eAppMsgType_t;
@@ -112,6 +111,14 @@ typedef struct
   eGpioState_t state; /**< For APP_GPIO_CMD_SET_STATE */
 } GpioLedStateMsg_t;
 
+/** @struct GpioButtonEventData_t
+ *  @brief Data for GPIO button event messages
+ */
+typedef struct
+{
+  unsigned int duration_ms;
+} GpioButtonEventData_t;
+
 /** @struct GpioMsg_t
  *  @brief Command or event message for the GPIO task
  */
@@ -121,7 +128,7 @@ typedef struct
   union
   {
     GpioLedStateMsg_t led_state; /**< For APP_GPIO_CMD_SET_STATE */
-    int button_level;   /**< For APP_GPIO_EVT_BUTTON_PRESSED */
+    GpioButtonEventData_t button_event; /**< For APP_GPIO_EVT_BUTTON_PRESSED */
   } data;
 } GpioMsg_t;
 

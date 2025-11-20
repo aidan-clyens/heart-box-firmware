@@ -10,6 +10,7 @@
 #define NUM_GPIO_PINS 40 // How many GPIO pins are available on the ESP32?
 
 static const char *TAG_GPIO = "GPIO_TASK";
+static const int BUTTON_PRESS_RESET_TIME_MS = 10000; // 10 seconds to trigger factory reset
 
 // Forward declarations
 static esp_err_t gpio_on_init(GenericTask *self);
@@ -21,6 +22,8 @@ static GenericTask *gpio_task;
 static TaskHandle_t gpio_button_task_handle = NULL;
 static SemaphoreHandle_t gpio_button_semaphore = NULL;
 static TimerHandle_t gpio_blink_timer = NULL;
+
+static int gpio_button_pressed_time_ms = 0;
 
 static int gpio_led_current_state[NUM_GPIO_PINS] = {0};
 
@@ -93,6 +96,26 @@ static int gpio_get_button_level()
 #endif
 }
 
+/** @brief Publish a button event to the State Machine
+ *  @param duration_ms Duration the button was pressed in milliseconds
+ */
+static void gpio_publish_button_event(unsigned int duration_ms)
+{
+  // Notify state machine
+  GpioMsg_t gpio_msg = {
+    .type = APP_GPIO_EVT_BUTTON_PRESSED,
+    .data.button_event = { .duration_ms = duration_ms }
+  };
+
+  AppMsg_t app_msg = {
+    .type = APP_GPIO_EVT_BUTTON_PRESSED,
+    .data = { .gpio = gpio_msg },
+    .source = APP_GPIO
+  };
+
+  state_machine_post_event_msg(&app_msg);
+}
+
 /** @brief Blink the status LED at a periodic interval
  *  @param xTimer
  */
@@ -151,9 +174,36 @@ static void gpio_button_task(void *args)
       ESP_LOGI(TAG_GPIO, "Received Push Button Event - Button level: %d", button_level);
       gpio_set_led_level(HEART_LED_ARRAY_PIN, button_level);
 
-      // Notify state machine
-      eAppMsgType_t event_type = (button_level == GPIO_HIGH) ? APP_GPIO_EVT_BUTTON_PRESSED : APP_GPIO_EVT_BUTTON_RELEASED;
-      state_machine_post_event(event_type, APP_GPIO);
+      // If button was pressed, get the current time
+      if (button_level == GPIO_HIGH)
+      {
+        gpio_button_pressed_time_ms = xTaskGetTickCount() * portTICK_PERIOD_MS;
+      }
+      else
+      {
+        if (gpio_button_pressed_time_ms != 0)
+        {
+          int press_duration_ms = (xTaskGetTickCount() * portTICK_PERIOD_MS) - gpio_button_pressed_time_ms;
+          ESP_LOGI(TAG_GPIO, "Button was pressed for %u ms", press_duration_ms);
+          gpio_button_pressed_time_ms = 0;
+
+          if (press_duration_ms >= BUTTON_PRESS_RESET_TIME_MS)
+          {
+            ESP_LOGW(TAG_GPIO, "Button press duration exceeded %d ms, triggering factory reset", BUTTON_PRESS_RESET_TIME_MS);
+            // // Notify state machine to perform factory reset
+            // AppMsg_t factory_reset_msg = {
+            //   .type = APP_EVT_FACTORY_RESET_REQUESTED,
+            //   .source = APP_GPIO
+            // };
+            // state_machine_post_event_msg(&factory_reset_msg);
+          }
+          else
+          {
+            // Notify state machine
+            gpio_publish_button_event(press_duration_ms);
+          }
+        }
+      }
 
       gpio_intr_enable(BUTTON_PIN);
     }

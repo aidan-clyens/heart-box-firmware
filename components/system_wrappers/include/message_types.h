@@ -56,6 +56,8 @@ typedef enum
   APP_AWS_IOT_EVT_SUBSCRIBED,
   APP_AWS_IOT_EVT_MSG_PRESSED,
 
+  APP_CMD_FACTORY_RESET,
+
   APP_MSG_NONE = -1 /**< Generic "no message" marker */
 } eAppMsgType_t;
 

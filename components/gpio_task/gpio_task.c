@@ -190,12 +190,8 @@ static void gpio_button_task(void *args)
           if (press_duration_ms >= BUTTON_PRESS_RESET_TIME_MS)
           {
             ESP_LOGW(TAG_GPIO, "Button press duration exceeded %d ms, triggering factory reset", BUTTON_PRESS_RESET_TIME_MS);
-            // // Notify state machine to perform factory reset
-            // AppMsg_t factory_reset_msg = {
-            //   .type = APP_EVT_FACTORY_RESET_REQUESTED,
-            //   .source = APP_GPIO
-            // };
-            // state_machine_post_event_msg(&factory_reset_msg);
+            // Notify state machine to perform factory reset
+            state_machine_post_event(APP_CMD_FACTORY_RESET, APP_GPIO);
           }
           else
           {

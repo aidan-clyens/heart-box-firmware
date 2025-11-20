@@ -285,6 +285,19 @@ static void state_machine_on_message(GenericTask *self, void *msg_buf, size_t ms
 
   ESP_LOGI(TAG, "Received message (type: %s) from %s", state_machine_event_to_string(event), state_machine_source_to_string(source));
 
+  if (event == APP_CMD_FACTORY_RESET)
+  {
+    ESP_LOGI(TAG, "Factory Reset command received. Erasing WiFi credentials and restarting...");
+
+    // Erase WiFi credentials from file system
+    file_system_clear(NVS_SSID_KEY);
+    file_system_clear(NVS_PASSWORD_KEY);
+
+    // Restart the device
+    esp_restart();
+    return;
+  }
+
   switch (current_state)
   {
   case STATE_IDLE:

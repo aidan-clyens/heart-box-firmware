@@ -405,7 +405,8 @@ static void state_machine_on_message(GenericTask *self, void *msg_buf, size_t ms
     else if (event == APP_AWS_IOT_EVT_MSG_PRESSED)
     {
       ESP_LOGI(TAG, "Message received from AWS IoT in STATE_AWS_IOT_CONNECTED");
-      gpio_set_state(HEART_LED_ARRAY_PIN, GPIO_STATE_LED_SOLID);
+      AwsIotMsg_t *aws_iot_msg = &app_msg->data.aws_iot;
+      gpio_set_state_with_duration(HEART_LED_ARRAY_PIN, GPIO_STATE_LED_SOLID, aws_iot_msg->data.button_event.duration_ms);
     }
     else
     {

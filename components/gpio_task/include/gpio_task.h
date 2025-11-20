@@ -38,10 +38,16 @@ esp_err_t gpio_task_init(void);
  */
 esp_err_t gpio_task_deinit(void);
 
-/** @brief Change the state of the GPIO status LED
+/** @brief Change the state of a GPIO LED
  *  @param state The state to change to
  */
 void gpio_set_state(gpio_num_t pin, eGpioState_t state);
+
+/** @brief Change the state of a GPIO LED for a specified duration
+ *  @param state The state to change to
+ *  @param duration_ms Duration in milliseconds to maintain the state
+ */
+void gpio_set_state_with_duration(gpio_num_t pin, eGpioState_t state, unsigned int duration_ms);
 
 /** @brief Get the current level of the selected LED pin
  *  @return The current level of the selected LED (0 = OFF, 1 = ON)

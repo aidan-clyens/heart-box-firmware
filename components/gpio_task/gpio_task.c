@@ -10,7 +10,7 @@
 #define NUM_GPIO_PINS 40 // How many GPIO pins are available on the ESP32?
 
 static const char *TAG_GPIO = "GPIO_TASK";
-static const int BUTTON_PRESS_RESET_TIME_MS = 10000; // 10 seconds to trigger factory reset
+static const int BUTTON_PRESS_RESET_TIME_MS = 20000; // 20 seconds to trigger factory reset
 
 // Forward declarations
 static esp_err_t gpio_on_init(GenericTask *self);
@@ -22,10 +22,13 @@ static GenericTask *gpio_task;
 static TaskHandle_t gpio_button_task_handle = NULL;
 static SemaphoreHandle_t gpio_button_semaphore = NULL;
 static TimerHandle_t gpio_blink_timer = NULL;
+static TimerHandle_t gpio_led_timer = NULL;
 
 static int gpio_button_pressed_time_ms = 0;
 
 static int gpio_led_current_state[NUM_GPIO_PINS] = {0};
+
+static int gpio_active_led_pin = 0;
 
 #ifdef DEBUG_GPIO_BUTTON_ISR
 static int gpio_simulated_button_level = GPIO_LOW;
@@ -39,12 +42,23 @@ BaseType_t gpio_post_msg(GpioMsg_t msg)
   return generic_task_post_msg(gpio_task, &msg, sizeof(GpioMsg_t));
 }
 
-/** @brief Public API: Change the state of the GPIO status LED
+/** @brief Public API: Change the state of a GPIO LED
  *  @param state The state to change to
  */
 void gpio_set_state(gpio_num_t pin, eGpioState_t state)
 {
-  GpioLedStateMsg_t led_state_msg = {.pin = pin, .state = state};
+  GpioLedStateMsg_t led_state_msg = {.pin = pin, .state = state, .duration_ms = 0};
+  GpioMsg_t msg = {.type = APP_GPIO_CMD_SET_STATE, .data.led_state = led_state_msg};
+  gpio_post_msg(msg);
+}
+
+/** @brief Public API: Change the state of a GPIO LED for a specified duration
+ *  @param state The state to change to
+ *  @param duration_ms Duration in milliseconds to maintain the state
+ */
+void gpio_set_state_with_duration(gpio_num_t pin, eGpioState_t state, unsigned int duration_ms)
+{
+  GpioLedStateMsg_t led_state_msg = {.pin = pin, .state = state, .duration_ms = duration_ms};
   GpioMsg_t msg = {.type = APP_GPIO_CMD_SET_STATE, .data.led_state = led_state_msg};
   gpio_post_msg(msg);
 }
@@ -123,6 +137,17 @@ static void gpio_blink_timer_cb(TimerHandle_t xTimer)
 {
   unsigned int current_level = gpio_get_led_level(LED_STATUS_PIN_2);
   gpio_set_led_level(LED_STATUS_PIN_2, !current_level);
+}
+
+/** @brief Turn off the LED after the specified duration
+ */
+static void gpio_led_timer_cb(TimerHandle_t xTimer)
+{
+  if (gpio_active_led_pin != 0)
+  {
+    gpio_set_led_level(gpio_active_led_pin, GPIO_LOW);
+    gpio_active_led_pin = 0;
+  }
 }
 
 /** @brief Push Button Interrupt Service Routine
@@ -305,6 +330,14 @@ static esp_err_t gpio_on_stop(GenericTask *self)
     gpio_blink_timer = NULL;
   }
 
+  // Step 1a: Stop and delete LED timer
+  if (gpio_led_timer != NULL)
+  {
+    xTimerStop(gpio_led_timer, portMAX_DELAY);
+    xTimerDelete(gpio_led_timer, portMAX_DELAY);
+    gpio_led_timer = NULL;
+  }
+
   // Step 2: Stop button task
   if (gpio_button_task_handle != NULL)
   {
@@ -365,6 +398,35 @@ static void gpio_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
         xTimerStop(gpio_blink_timer, 0);
       }
       gpio_set_led_level(msg->data.led_state.pin, GPIO_HIGH);
+
+      // If a duration is specified, set a timer to turn off the LED after the duration
+      if (msg->data.led_state.duration_ms > 0)
+      {
+        // Delete existing timer if it exists since duration may be different
+        if (gpio_led_timer != NULL)
+        {
+          xTimerStop(gpio_led_timer, 0);
+          xTimerDelete(gpio_led_timer, 0);
+          gpio_led_timer = NULL;
+        }
+
+        // Create one-shot timer with the new duration
+        gpio_led_timer = xTimerCreate("led_timer",
+          pdMS_TO_TICKS(msg->data.led_state.duration_ms),
+          pdFALSE,  // One-shot timer
+          NULL,
+          gpio_led_timer_cb);
+        
+        if (gpio_led_timer != NULL)
+        {
+          gpio_active_led_pin = msg->data.led_state.pin;
+          xTimerStart(gpio_led_timer, 0);
+        }
+        else
+        {
+          ESP_LOGE(TAG_GPIO, "Failed to create LED timer");
+        }
+      }
       break;
 
     case GPIO_STATE_LED_BLINK:

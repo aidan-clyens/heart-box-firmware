@@ -111,6 +111,7 @@ typedef struct
 {
   gpio_num_t pin;     /**< For APP_GPIO_CMD_SET_STATE */
   eGpioState_t state; /**< For APP_GPIO_CMD_SET_STATE */
+  unsigned int duration_ms; /**< Optional duration to maintain state */
 } GpioLedStateMsg_t;
 
 /** @struct GpioButtonEventData_t

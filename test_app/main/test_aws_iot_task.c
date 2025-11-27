@@ -262,7 +262,7 @@ TEST(aws_iot_task, publish_button_events)
   TEST_ASSERT_EQUAL(0, stats.messages_published);
   TEST_ASSERT_EQUAL(0, stats.messages_received);
 
-  aws_iot_publish_button_pressed_event();
+  aws_iot_publish_button_event(500);
   vTaskDelay(pdMS_TO_TICKS(10 * DELAY_TIME_MS)); // Allow time for message to be published
 
   stats = aws_iot_get_statistics();
@@ -277,7 +277,7 @@ TEST(aws_iot_task, publish_button_events)
   TEST_ASSERT_EQUAL(1, stats.messages_published);
   TEST_ASSERT_EQUAL(1, stats.messages_received);
 
-  aws_iot_publish_button_released_event();
+  aws_iot_publish_button_event(500);
   vTaskDelay(pdMS_TO_TICKS(10 * DELAY_TIME_MS)); // Allow time for message to be published
 
   stats = aws_iot_get_statistics();
@@ -339,15 +339,7 @@ TEST(aws_iot_task, profile_message_round_trip)
     aws_iot_reset_profiling();
     aws_iot_enable_profiling();
 
-    // Publish message (alternate between pressed and released)
-    if (i % 2 == 0)
-    {
-      aws_iot_publish_button_pressed_event();
-    }
-    else
-    {
-      aws_iot_publish_button_released_event();
-    }
+    aws_iot_publish_button_event(500);
 
     // Wait for round-trip to complete
     vTaskDelay(pdMS_TO_TICKS(10 * DELAY_TIME_MS));

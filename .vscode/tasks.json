@@ -2,7 +2,7 @@
     "tasks": [
         {
             "type": "shell",
-            "label": "ESP32 - Build App",
+            "label": "ESP32: Build App",
             "command": "idf.py build",
             "group": "build",
             "problemMatcher": [],
@@ -10,7 +10,7 @@
         },
         {
             "type": "shell",
-            "label": "ESP32 - Build, Flash, and Monitor App",
+            "label": "ESP32: Build, Flash, and Monitor App",
             "command": "idf.py build; idf.py -p COM4 flash monitor",
             "group": "build",
             "problemMatcher": [],
@@ -18,27 +18,35 @@
         },
         {
             "type": "shell",
-            "label": "ESP32 - Build Test App",
+            "label": "ESP32: Build Test App",
             "command": "cd test_app; idf.py build",
             "group": "build",
             "problemMatcher": [],
             "detail": "Build the ESP32 Test Application",
             "dependsOrder": "sequence",
             "dependsOn": [
-                "ESP32 - Build App"
+                "ESP32: Build App"
             ]
         },
         {
             "type": "shell",
-            "label": "ESP32 - Build, Flash, and Monitor Test App",
+            "label": "ESP32: Build, Flash, and Monitor Test App",
             "command": "cd test_app; idf.py build; idf.py -p COM4 flash monitor",
             "group": "none",
             "problemMatcher": [],
             "detail": "Build, Flash, and Monitor the ESP32 Test Application",
             "dependsOrder": "sequence",
             "dependsOn": [
-                "ESP32 - Build App"
+                "ESP32: Build App"
             ]
+        },
+        {
+            "type": "shell",
+            "label": "AWS IoT: Get Things",
+            "command": "aws iot list-things",
+            "group": "none",
+            "problemMatcher": [],
+            "detail": "List AWS IoT Things"
         }
     ]
 }

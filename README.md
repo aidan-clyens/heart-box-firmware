@@ -2,6 +2,32 @@
 
 ---
 
+## Table of Contents
+
+- [1. Introduction](#1-introduction)
+- [2. System Overview](#2-system-overview)
+  - [2.1 Functional Requirements](#21-functional-requirements)
+  - [2.2 High-Level Architecture](#22-high-level-architecture)
+- [3. Hardware Platform](#3-hardware-platform)
+  - [3.1 ESP32-WROOM](#31-esp32-wroom)
+  - [3.2 GPIO Assignments](#32-gpio-assignments)
+  - [3.3 Electronic Circuit (PCB)](#33-electronic-circuit-pcb)
+- [4. Software Architecture](#4-software-architecture)
+  - [4.1 Task Framework](#41-task-framework)
+  - [4.2 State Machine](#42-state-machine)
+  - [4.3 Event Flow Example](#43-event-flow-example)
+- [5. Connectivity](#5-connectivity)
+  - [5.1 MQTT Broker](#51-mqtt-broker)
+  - [5.2 Security](#52-security)
+- [6. Power Considerations](#6-power-considerations)
+- [7. Development Environment](#7-development-environment)
+  - [7.1 How to Install ESP-IDF](#71-how-to-install-esp-idf)
+- [8. Bill of Materials (BOM)](#8-bill-of-materials-bom)
+- [9. Conclusion](#9-conclusion)
+
+---
+
+
 ## 1. Introduction  
 
 The *Heart Boxes* project is a connected IoT system designed to enable couples to send symbolic “heart” messages to each other in real time. Each box contains:  
@@ -42,7 +68,8 @@ Each box acts as both publisher and subscriber to a shared MQTT topic. Button ev
 
 ## 3. Hardware Platform  
 
-### 3.1 Microcontroller Selection  
+### 3.1 ESP32-WROOM
+
 - **ESP32-WROOM** chosen for:  
   - Integrated WiFi and Bluetooth  
   - Dual-core LX6 processor (240 MHz)  
@@ -50,12 +77,15 @@ Each box acts as both publisher and subscriber to a shared MQTT topic. Button ev
   - Mature ecosystem and MQTT support  
 
 ### 3.2 GPIO Assignments  
+
 | Component         | Pin   | Direction | Notes |
 |-------------------|-------|-----------|-------|
 | Push Button       | GPIO26 | Input     | Debounced ISR |
 | Heart LED Array   | GPIO12 | Output    | 20-LED matrix |
 | Green Status LED  | GPIO14 | Output    | WiFi connected |
 | Red Status LED    | GPIO27 | Output    | Error state |
+
+### 3.3 Electronic Circuit (PCB)
 
 ---
 
@@ -138,6 +168,10 @@ This design ensures **decoupling**, **maintainability**, and **clear event flow*
 - VS Code integration with tasks for build/flash/monitor  
 - Certificates stored per-device in `certs/{DEVICE_NAME}/`  
 
+### 7.1 How to Install ESP-IDF
+
+
+
 ---
 
 ## 8. Bill of Materials (BOM)  
@@ -147,6 +181,7 @@ This design ensures **decoupling**, **maintainability**, and **clear event flow*
 | ESP32-WROOM     | 2   | $23.95     | WiFi-enabled MCU |
 | LEDs (5mm)      | 500 | $16.59     | Heart array |
 | Push Buttons    | 20  | $12.99     | Momentary switches |
+| PCB             | 2   | Custom     | KiCad design |
 | Wooden Box      | 2   | Custom     | CNC/Fusion 360 design |
 
 ---

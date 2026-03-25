@@ -1,18 +1,50 @@
 {
+    "version": "2.0.0",
     "tasks": [
         {
             "type": "shell",
             "label": "ESP32: Build App",
             "command": "idf.py build",
             "group": "build",
+            "windows": {
+                "command": "idf.py build",
+                "options": {
+                    "shell": {
+                        "executable": "powershell.exe",
+                        "args": [
+                            "-ExecutionPolicy",
+                            "Bypass",
+                            "-Command",
+                            ". 'C:\\Espressif\\frameworks\\esp-idf-v5.5.1\\export.ps1';",
+                        ]
+                    }
+                }
+            },
             "problemMatcher": [],
             "detail": "Build the ESP32 Application"
         },
         {
             "type": "shell",
             "label": "ESP32: Build, Flash, and Monitor App",
+            "windows":{
+                "command": "idf.py build; idf.py -p COM4 flash monitor",
+                "options": {
+                    "shell": {
+                        "executable": "powershell.exe",
+                        "args": [
+                            "-ExecutionPolicy",
+                            "Bypass",
+                            "-Command",
+                            ". 'C:\\Espressif\\frameworks\\esp-idf-v5.5.1\\export.ps1';"
+                        ]
+                    }
+                }
+            },
             "command": "idf.py build; idf.py -p COM4 flash monitor",
-            "group": "build",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
             "problemMatcher": [],
             "detail": "Build, Flash, and Monitor the ESP32 Application"
         },
@@ -20,7 +52,21 @@
             "type": "shell",
             "label": "ESP32: Build Test App",
             "command": "cd test_app; idf.py build",
-            "group": "build",
+            "group": "test",
+            "windows": {
+                "command": "cd test_app; idf.py build",
+                "options": {
+                    "shell": {
+                        "executable": "powershell.exe",
+                        "args": [
+                            "-ExecutionPolicy",
+                            "Bypass",
+                            "-Command",
+                            ". 'C:\\Espressif\\frameworks\\esp-idf-v5.5.1\\export.ps1';"
+                        ]
+                    }
+                }
+            },
             "problemMatcher": [],
             "detail": "Build the ESP32 Test Application",
             "dependsOrder": "sequence",
@@ -32,13 +78,26 @@
             "type": "shell",
             "label": "ESP32: Build, Flash, and Monitor Test App",
             "command": "cd test_app; idf.py build; idf.py -p COM4 flash monitor",
-            "group": "none",
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            },
+            "windows": {
+                "command": "cd test_app; idf.py build; idf.py -p COM4 flash monitor",
+                "options": {
+                    "shell": {
+                        "executable": "powershell.exe",
+                        "args": [
+                            "-ExecutionPolicy",
+                            "Bypass",
+                            "-Command",
+                            ". 'C:\\Espressif\\frameworks\\esp-idf-v5.5.1\\export.ps1';"
+                        ]
+                    }
+                }
+            },
             "problemMatcher": [],
             "detail": "Build, Flash, and Monitor the ESP32 Test Application",
-            "dependsOrder": "sequence",
-            "dependsOn": [
-                "ESP32: Build App"
-            ]
         },
         {
             "type": "shell",

@@ -57,6 +57,7 @@ static GenericTask *aws_iot_task = NULL;
 
 static const char *MSG_CLIENT_TAG = "client";
 static const char *MSG_BUTTON_TAG = "button";
+static const char *MSG_LOG_TAG = "log";
 static const char *MSG_DURATION_MS_TAG = "duration_ms";
 static const char *MSG_BUTTON_PRESSED = "pressed";
 static const char *MSG_BUTTON_RELEASED = "released";
@@ -76,6 +77,7 @@ static StaticSemaphore_t tls_context_semaphore;
 static MQTTSubscribeInfo_t subscription_list[1];
 static unsigned short subscribe_packet_identifier = 0U;
 static char *mqtt_topic = NULL;
+static char *mqtt_log_topic = NULL;
 
 // MQTT publish tracking
 static uint16_t expected_puback_packet_id = 0;
@@ -278,6 +280,19 @@ const char *aws_iot_get_mqtt_topic(void)
   return mqtt_topic;
 }
 
+/** @brief Public API: Get the current MQTT log topic
+ *  @return Current MQTT log topic string
+ */
+const char *aws_iot_get_mqtt_log_topic(void)
+{
+  if (mqtt_log_topic == NULL || mqtt_log_topic[0] == '\0')
+  {
+    return "";
+  }
+
+  return mqtt_log_topic;
+}
+
 /** @brief Public API: Retrieve AWS IoT task statistics
  *  @return Structure containing AWS IoT task statistics
  */
@@ -308,6 +323,23 @@ void aws_iot_reset_profiling(void)
 {
   memset(&aws_iot_profiling_data, 0, sizeof(aws_iot_profiling_data));
   ESP_LOGI(TAG_AWS_IOT, "Profiling data reset");
+}
+
+/** @brief Public API: Publish a log message to AWS IoT */
+void aws_iot_publish_log(const char *message)
+{
+  if (!aws_iot_is_connected())
+  {
+    ESP_LOGW(TAG_AWS_IOT, "Cannot publish log message when MQTT is not connected");
+    return;
+  }
+
+  AwsIotMsg_t msg;
+  msg.type = APP_AWS_IOT_CMD_PUBLISH_LOG;
+  strncpy(msg.data.log_data.message, message, MAX_LOG_MESSAGE_LEN - 1);
+  msg.data.log_data.message[MAX_LOG_MESSAGE_LEN - 1] = '\0';
+
+  aws_iot_post_msg(msg);
 }
 
 /** @brief AWS IoT Keep Alive Task */
@@ -672,6 +704,49 @@ static const char *aws_iot_create_payload(const char *state, unsigned int durati
   return payload;
 }
 
+/** @brief Create a JSON payload for the log message
+ *  @param log_message The log message string
+ *  @return Pointer to the JSON payload string
+ */
+static const char *aws_iot_create_payload_log(const char *log_message)
+{
+  // Prepare the MQTT PUBLISH message
+  cJSON *json = cJSON_CreateObject();
+  if (json == NULL)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Failed to create JSON payload for log message");
+    return NULL;
+  }
+
+  // Verify the client identifier is set
+  if (mqtt_client_identifier == NULL || mqtt_client_identifier[0] == '\0')
+  {
+    ESP_LOGE(TAG_AWS_IOT, "MQTT client identifier is not set, cannot publish log message.");
+    cJSON_Delete(json);
+    return NULL;
+  }
+
+  // Add fields to JSON object
+  if (cJSON_AddStringToObject(json, MSG_CLIENT_TAG, mqtt_client_identifier) == NULL ||
+      cJSON_AddStringToObject(json, MSG_LOG_TAG, log_message) == NULL)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Failed to create JSON payload for log message");
+    cJSON_Delete(json);
+    return NULL;
+  }
+
+  const char *payload = cJSON_PrintUnformatted(json);
+  if (payload == NULL)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Failed to serialize JSON payload for log message");
+    cJSON_Delete(json);
+    return NULL;
+  }
+
+  cJSON_Delete(json);
+  return payload;
+}
+
 /** @brief Handle the AWS IoT publish button event command
  *  @param state The button state string ("pressed" or "released")
  */
@@ -771,6 +846,53 @@ static void aws_iot_publish_button_event_cmd(const char* state, unsigned int dur
   aws_iot_statistics.messages_published++;
 
   free((void *)payload);
+}
+
+static void aws_iot_publish_log_cmd(const char* log_message)
+{
+  // TODO - Implement log message publishing to AWS IoT similar to button event publishing
+  ESP_LOGI(TAG_AWS_IOT, "Log message to publish: %s", log_message);
+
+  // Check if MQTT is connected
+  if (!aws_iot_is_connected())
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Cannot publish log message: MQTT not connected");
+    return;
+  }
+
+  const char *payload = aws_iot_create_payload_log(log_message);
+  if (payload == NULL)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Failed to create payload for log message");
+    return;
+  }
+
+  MQTTPublishInfo_t publish_info = {0};
+
+  const char *topic = aws_iot_get_mqtt_log_topic();
+  if (topic == NULL)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Failed to retrieve MQTT topic for publishing.");
+    free((void *)payload);
+    return;
+  }
+
+  // Get a unique packet identifier for the PUBLISH packet
+  uint16_t packet_id = MQTT_GetPacketId(&mqtt_context);
+
+  publish_info.qos = MQTTQoS1;
+  publish_info.pTopicName = topic;
+  publish_info.topicNameLength = strlen(topic);
+  publish_info.pPayload = (const void *)payload;
+  publish_info.payloadLength = strlen(payload);
+
+  MQTTStatus_t mqtt_status = MQTT_Publish(&mqtt_context, &publish_info, packet_id);
+  if (mqtt_status != MQTTSuccess)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Failed to publish log message: %s", MQTT_Status_strerror(mqtt_status));
+    free((void *)payload);
+    return;
+  }
 }
 
 /** @brief Handle incoming PUBLISH packet
@@ -1250,6 +1372,9 @@ static void aws_iot_on_message(GenericTask *self, void *msg_buf, size_t msg_len)
       break;
     case APP_AWS_IOT_CMD_PUBLISH_BUTTON_EVENT:
       aws_iot_publish_button_event_cmd(msg->data.button_event.button_state, msg->data.button_event.duration_ms);
+      break;
+    case APP_AWS_IOT_CMD_PUBLISH_LOG:
+      aws_iot_publish_log_cmd(msg->data.log_data.message);
       break;
     default:
       break;

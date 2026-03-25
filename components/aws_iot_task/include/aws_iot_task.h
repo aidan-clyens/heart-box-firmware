@@ -96,6 +96,11 @@ const char *aws_iot_get_mqtt_broker_url(void);
  */
 const char *aws_iot_get_mqtt_topic(void);
 
+/** @brief Public API: Get the current MQTT log topic
+ *  @return Current MQTT log topic string
+ */
+const char *aws_iot_get_mqtt_log_topic(void);
+
 /** @brief Public API: Retrieve AWS IoT task statistics
  *  @return Structure containing AWS IoT task statistics
  */
@@ -114,6 +119,11 @@ AwsIotProfilingData_t aws_iot_get_profiling_data(void);
 /** @brief Public API: Reset profiling data
  */
 void aws_iot_reset_profiling(void);
+
+/** @brief Public API: Publish a log message to AWS IoT
+ *  @param message The log message to publish
+ */
+void aws_iot_publish_log(const char* message);
 
 #ifdef __cplusplus
 }

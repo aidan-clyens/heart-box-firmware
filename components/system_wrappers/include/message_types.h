@@ -15,6 +15,7 @@ extern "C"
 #define MAX_HOSTNAME_LEN    64
 #define MAX_URL_LEN         128
 #define MAX_CLIENT_IDENTIFIER_LEN 64
+#define MAX_LOG_MESSAGE_LEN 256
 
 static const char *NVS_SSID_KEY = "wifi_ssid";
 static const char *NVS_PASSWORD_KEY = "wifi_password";
@@ -49,12 +50,14 @@ typedef enum
   APP_AWS_IOT_CMD_SUBSCRIBE,
   APP_AWS_IOT_CMD_START_LISTENING,
   APP_AWS_IOT_CMD_PUBLISH_BUTTON_EVENT,
+  APP_AWS_IOT_CMD_PUBLISH_LOG,
 
   // -- AWS IoT Events -- //
   APP_AWS_IOT_EVT_CONNECTED,
   APP_AWS_IOT_EVT_DISCONNECTED,
   APP_AWS_IOT_EVT_SUBSCRIBED,
   APP_AWS_IOT_EVT_MSG_PRESSED,
+  APP_AWS_IOT_EVT_LOG_PUBLISHED,
 
   APP_CMD_FACTORY_RESET,
 
@@ -153,6 +156,14 @@ typedef struct
   char client_identifier[MAX_CLIENT_IDENTIFIER_LEN];  /**< For APP_AWS_IOT_CMD_CONNECT */
 } AwsIotConnectData_t;
 
+/** @struct AwsIotLogData_t
+ *  @brief Data for AWS IoT log message command
+ */
+typedef struct
+{
+  char message[MAX_LOG_MESSAGE_LEN]; /**< For APP_AWS_IOT_CMD_PUBLISH_LOG */
+} AwsIotLogData_t;
+
 /** @struct AwsIotMsg_t
  *  @brief  Message structure for AWS IoT task messages
  */
@@ -164,6 +175,7 @@ typedef struct
     AwsIotConnectData_t connect_data;     /**< For APP_AWS_IOT_CMD_CONNECT */
     AwsIotButtonEventData_t button_event; /**< For APP_AWS_IOT_CMD_PUBLISH_BUTTON_EVENT */
     char topic[MAX_HOSTNAME_LEN];         /**< For APP_AWS_IOT_CMD_SUBSCRIBE */
+    AwsIotLogData_t log_data;             /**< For APP_AWS_IOT_CMD_PUBLISH_LOG */
   } data;
 } AwsIotMsg_t;
 

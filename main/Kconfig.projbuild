@@ -12,6 +12,12 @@ menu "HeartBox Configuration"
         help
             The MQTT topic name used for publishing and subscribing.
 
+    config HEARTBOX_LOG_TOPIC_NAME
+        string "MQTT Log Topic Name"
+        default "heartbox/${HEARTBOX_DEVICE_NAME}/log"
+        help
+            The MQTT topic name used for publishing and subscribing.
+
     config HEARTBOX_AWS_IOT_ENDPOINT
         string "AWS IoT Endpoint"
         default "airgahux2exxu-ats.iot.us-east-1.amazonaws.com"

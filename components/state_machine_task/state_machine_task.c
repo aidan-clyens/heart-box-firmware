@@ -24,6 +24,11 @@
 #endif // MQTT_TOPIC
 #define MQTT_TOPIC_LENGTH ((uint16_t)(sizeof(MQTT_TOPIC) - 1))
 
+#ifndef MQTT_LOG_TOPIC
+#error "MQTT_LOG_TOPIC must be defined in sdkconfig"
+#endif // MQTT_LOG_TOPIC
+#define MQTT_LOG_TOPIC_LENGTH ((uint16_t)(sizeof(MQTT_LOG_TOPIC) - 1))
+
 // #define DEBUG_MODE
 
 static const char *TAG = "STATE_MACHINE_TASK";

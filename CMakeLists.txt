@@ -39,6 +39,7 @@ message(STATUS "Using certificates from: ${CERTS_PATH}")
 
 add_definitions(-DDEVICE_NAME="${CONFIG_HEARTBOX_DEVICE_NAME}")
 add_definitions(-DTOPIC_NAME="${CONFIG_HEARTBOX_TOPIC_NAME}")
+add_definitions(-DLOG_TOPIC_NAME="${CONFIG_HEARTBOX_LOG_TOPIC_NAME}")
 add_definitions(-DAWS_IOT_ENDPOINT="${CONFIG_HEARTBOX_AWS_IOT_ENDPOINT}")
 
 target_add_binary_data(${CMAKE_PROJECT_NAME}.elf "${CERTS_PATH}/AmazonRootCA1.pem" TEXT)

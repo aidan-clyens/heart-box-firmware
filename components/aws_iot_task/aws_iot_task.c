@@ -28,7 +28,7 @@
 
 // Time definitions
 #define MQTT_KEEP_ALIVE_INTERVAL_S 60U
-#define MQTT_KEEP_ALIVE_TIMER_INTERVAL_MS 50U
+#define MQTT_KEEP_ALIVE_TIMER_INTERVAL_MS (MQTT_KEEP_ALIVE_INTERVAL_S * 1000U)
 #define MQTT_CONNACK_RECV_TIMEOUT_MS 5000U
 #define MQTT_PROCESS_LOOP_TIMEOUT_MS 5000U
 
@@ -280,6 +280,36 @@ const char *aws_iot_get_mqtt_topic(void)
   return mqtt_topic;
 }
 
+/** @brief Public API: Set the MQTT log topic
+ *  @param topic The MQTT log topic name to set
+ */
+void aws_iot_set_mqtt_log_topic(const char *topic)
+{
+  if (topic == NULL)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Cannot set MQTT log topic to NULL");
+    return;
+  }
+
+  if (strlen(topic) >= MAX_HOSTNAME_LEN)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "MQTT log topic length exceeds maximum allowed: %d", MAX_HOSTNAME_LEN - 1);
+    return;
+  }
+
+  mqtt_log_topic = (char *)malloc(MAX_HOSTNAME_LEN);
+  if (mqtt_log_topic == NULL)
+  {
+    ESP_LOGE(TAG_AWS_IOT, "Failed to allocate memory for MQTT log topic");
+    return;
+  }
+
+  strncpy(mqtt_log_topic, topic, MAX_HOSTNAME_LEN - 1);
+  mqtt_log_topic[MAX_HOSTNAME_LEN - 1] = '\0';
+
+  ESP_LOGI(TAG_AWS_IOT, "MQTT log topic set to: %s", mqtt_log_topic);
+}
+
 /** @brief Public API: Get the current MQTT log topic
  *  @return Current MQTT log topic string
  */
@@ -364,6 +394,12 @@ static void aws_iot_keep_alive_task()
       keep_alive_task_handle = NULL;
       vTaskDelete(NULL);
     }
+
+    uint32_t current_time_ms = Clock_GetTimeMs();
+    ESP_LOGI(TAG_AWS_IOT_KEEP_ALIVE, "AWS IoT Keep Alive ping at %lu ms", current_time_ms);
+    char message[128];
+    sprintf(message, "AWS IoT Keep Alive ping at %lu ms", current_time_ms);
+    aws_iot_publish_log(message);
 
     vTaskDelay(pdMS_TO_TICKS(MQTT_KEEP_ALIVE_TIMER_INTERVAL_MS));
   }
@@ -842,6 +878,9 @@ static void aws_iot_publish_button_event_cmd(const char* state, unsigned int dur
   }
 
   ESP_LOGI(TAG_AWS_IOT, "Published button event to topic %s: %s", topic, payload);
+  char message[128];
+  sprintf(message, "Published button event to topic %s at %lu ms: %s", topic, aws_iot_profiling_data.publish_timestamp_ms, payload);
+  aws_iot_publish_log(message);
 
   aws_iot_statistics.messages_published++;
 

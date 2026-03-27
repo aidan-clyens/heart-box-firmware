@@ -397,6 +397,9 @@ static void state_machine_on_message(GenericTask *self, void *msg_buf, size_t ms
 
       gpio_set_state(LED_STATUS_PIN_2, GPIO_STATE_LED_SOLID);
 
+      // Set topic for MQTT logging
+      aws_iot_set_mqtt_log_topic(MQTT_LOG_TOPIC);
+
       // Start AWS IoT Keep Alive task to listen for incoming messages
       aws_iot_start_listening();
     }

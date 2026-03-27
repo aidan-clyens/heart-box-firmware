@@ -96,6 +96,11 @@ const char *aws_iot_get_mqtt_broker_url(void);
  */
 const char *aws_iot_get_mqtt_topic(void);
 
+/** @brief Public API: Set the MQTT log topic
+ *  @param topic The MQTT log topic name to set
+ */
+void aws_iot_set_mqtt_log_topic(const char *topic);
+
 /** @brief Public API: Get the current MQTT log topic
  *  @return Current MQTT log topic string
  */

@@ -1,0 +1,1 @@
+docker exec -it esp-idf-dev /bin/bash

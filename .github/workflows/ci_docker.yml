@@ -11,7 +11,7 @@ permissions:
   packages: write   # needed for pushing to GHCR
 
 env:
-  IMAGE_NAME: ghcr.io/esp-idf-dev
+  IMAGE_NAME: ghcr.io/${{ github.actor }}/esp-idf-dev
   IMAGE_TAG: latest
 
 jobs:

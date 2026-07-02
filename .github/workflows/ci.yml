@@ -137,9 +137,6 @@ jobs:
         with:
           submodules: 'recursive'
 
-      - name: Initialize and update submodules
-        run: git submodule update --init --recursive
-      
       - name: ESP IDF Reconfigure
         run: |
           idf.py reconfigure

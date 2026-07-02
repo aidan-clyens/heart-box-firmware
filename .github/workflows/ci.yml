@@ -121,3 +121,29 @@ jobs:
             build/bootloader/bootloader.bin
             build/partition_table/partition-table.bin
           retention-days: 7
+
+  build-with-docker:
+    runs-on: ubuntu-latest
+    needs: build-and-push-image
+    container:
+      image: ghcr.io/aidan-clyens/esp-idf-dev:latest
+      options: --platform=linux/amd64
+      env:
+        IMAGE_NAME: ghcr.io/aidan-clyens/esp-idf-dev
+        IMAGE_TAG: latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+
+      - name: Initialize and update submodules
+        run: git submodule update --init --recursive
+      
+      - name: ESP IDF Reconfigure
+        run: |
+          idf.py reconfigure
+        
+      - name: ESP IDF Build
+        run: |
+          idf.py build

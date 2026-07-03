@@ -1,1 +1,1 @@
-docker exec -it esp-idf-dev /bin/bash
+docker exec -it heart-box-firmware /bin/bash

@@ -137,10 +137,14 @@ jobs:
         with:
           submodules: 'recursive'
 
-      - name: ESP IDF Reconfigure
+      - name: Setup ESP-IDF Environment
+        run: |
+          source /root/.espressif/tools/activate_idf_v5.4.2.sh
+
+      - name: ESP-IDF Reconfigure
         run: |
           idf.py reconfigure
         
-      - name: ESP IDF Build
+      - name: ESP-IDF Build
         run: |
           idf.py build

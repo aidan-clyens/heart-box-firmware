@@ -2,9 +2,9 @@
 
 set -euo pipefail
 
-readonly IMAGE="$1"
+readonly IMAGE="ghcr.io/aidan-clyens/esp-idf-dev:latest"
 readonly PLATFORM="linux/amd64"
-readonly CONTAINER_NAME="esp-idf-dev"
+readonly CONTAINER_NAME="heart-box-firmware"
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 readonly CONTAINER_HOME="/home/$(id -un)"

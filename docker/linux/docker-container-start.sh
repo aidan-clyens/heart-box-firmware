@@ -14,10 +14,12 @@ if ! command -v docker >/dev/null 2>&1; then
 	exit 1
 fi
 
+docker pull "${IMAGE}"
+
 if docker container inspect "${CONTAINER_NAME}" >/dev/null 2>&1; then
-	docker start "${CONTAINER_NAME}" >/dev/null
-	echo "Started existing container '${CONTAINER_NAME}'."
-	exit 0
+	docker stop "${CONTAINER_NAME}" >/dev/null
+	docker rm "${CONTAINER_NAME}" >/dev/null
+	echo "Removed existing container '${CONTAINER_NAME}'."
 fi
 
 docker create -it --init --platform="${PLATFORM}" \

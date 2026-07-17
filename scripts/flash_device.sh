@@ -1,19 +1,19 @@
 #!/bin/bash
 # Script to build and flash ESP32 device with specified device name
-# Usage: ./flash_device.sh <device_name>
-# Example: ./flash_device.sh Heart_Box_1
+# Usage: ./flash_device.sh <device_name> <port>
+# Example: ./flash_device.sh Heart_Box_1 COM4
 
 set -e  # Exit on error
 
-if [ -z "$1" ]; then
-    echo "Error: Device name required"
-    echo "Usage: ./flash_device.sh <device_name>"
-    echo "Example: ./flash_device.sh Heart_Box_1"
+if [ -z "$1" || -z "$2" ]; then
+    echo "Error: Device name and COM port required"
+    echo "Usage: ./flash_device.sh <device_name> <port>"
+    echo "Example: ./flash_device.sh Heart_Box_1 COM4"
     exit 1
 fi
 
 DEVICE_NAME="$1"
-COM_PORT="COM4"
+COM_PORT="$2"
 
 echo "========================================"
 echo "Building and flashing device: $DEVICE_NAME"

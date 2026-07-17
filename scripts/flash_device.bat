@@ -1,19 +1,26 @@
 @echo off
 REM Script to build and flash ESP32 device with specified device name
-REM Usage: flash_device.bat <device_name>
-REM Example: flash_device.bat Heart_Box_1
+REM Usage: flash_device.bat <device_name> <port>
+REM Example: flash_device.bat Heart_Box_1 COM4
 
 setlocal enabledelayedexpansion
 
 if "%~1"=="" (
-    echo Error: Device name required
-    echo Usage: flash_device.bat ^<device_name^>
-    echo Example: flash_device.bat Heart_Box_1
+    echo Error: Device name and COM port required
+    echo Usage: flash_device.bat ^<device_name^> ^<port^>
+    echo Example: flash_device.bat Heart_Box_1 COM4
+    exit /b 1
+)
+
+if "%~2"=="" (
+    echo Error: Device name and COM port required
+    echo Usage: flash_device.bat ^<device_name^> ^<port^>
+    echo Example: flash_device.bat Heart_Box_1 COM4
     exit /b 1
 )
 
 set DEVICE_NAME=%~1
-set COM_PORT=COM4
+set COM_PORT=%~2
 
 echo ========================================
 echo Building and flashing device: %DEVICE_NAME%

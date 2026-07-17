@@ -79,7 +79,7 @@ void wifi_ping(const char *hostname)
 {
   WifiMsg_t msg = {.type = APP_WIFI_CMD_PING};
   strncpy(msg.data.host, hostname, MAX_HOSTNAME_LEN);
-  msg.data.host[MAX_HOSTNAME_LEN] = '\0';
+  msg.data.host[MAX_HOSTNAME_LEN - 1] = '\0';
   wifi_post_msg(msg);
 }
 

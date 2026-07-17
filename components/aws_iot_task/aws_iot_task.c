@@ -375,7 +375,7 @@ void aws_iot_publish_log(const char *message)
 }
 
 /** @brief AWS IoT Keep Alive Task */
-static void aws_iot_keep_alive_task()
+static void aws_iot_keep_alive_task(void *)
 {
   ESP_LOGI(TAG_AWS_IOT_KEEP_ALIVE, "AWS IoT Keep Alive Task started.");
 

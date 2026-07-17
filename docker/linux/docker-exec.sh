@@ -1,1 +1,0 @@
-docker exec -it heart-box-firmware /bin/bash

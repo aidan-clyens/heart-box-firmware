@@ -29,8 +29,6 @@
 #endif // MQTT_LOG_TOPIC
 #define MQTT_LOG_TOPIC_LENGTH ((uint16_t)(sizeof(MQTT_LOG_TOPIC) - 1))
 
-// #define DEBUG_MODE
-
 static const char *TAG = "STATE_MACHINE_TASK";
 
 static GenericTask *sm_task = NULL;
@@ -180,9 +178,12 @@ static void state_machine_enter_state(eAppState_t new_state)
       sm_http_server = NULL;
     }
 
-#ifdef DEBUG_MODE
-    file_system_write_string(NVS_SSID_KEY, "OctopusChurch");
-    file_system_write_string(NVS_PASSWORD_KEY, "BishopNemo");
+#ifdef TEST_WIFI_SSID
+    file_system_write_string(NVS_SSID_KEY, TEST_WIFI_SSID);
+#endif
+
+#ifdef TEST_WIFI_PASSWORD
+    file_system_write_string(NVS_PASSWORD_KEY, TEST_WIFI_PASSWORD);
 #endif
 
     // Attempt to read WiFi credentials from file system
